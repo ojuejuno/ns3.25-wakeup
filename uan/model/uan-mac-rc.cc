@@ -492,7 +492,8 @@ UanMacRc::ScheduleData (const UanHeaderRcCts &ctsh, const UanHeaderRcCtsGlobal &
       Time eventTime = startDelay + frameDelay;
       if (eventTime.GetSeconds () < 0)
         {
-          if (eventTime.GetSeconds () > -0.001)
+		  eventTime = Seconds (0);
+		  if (eventTime.GetSeconds () > -0.001)
             {
               eventTime = Seconds (0);
             }

@@ -19,11 +19,11 @@
  *         Andrea Sacco <andrea.sacco85@gmail.com>
  */
 
-#ifndef UAN_PHY_DUAL_H
-#define UAN_PHY_DUAL_H
+#ifndef UAN_PHY_DUAL_PW_H
+#define UAN_PHY_DUAL_PW_H
 
 #include "ns3/uan-phy.h"
-#include "ns3/uan-phy-gen.h"
+
 
 
 namespace ns3 {
@@ -33,19 +33,19 @@ class UanModesList;
 
 
 /**
- * Default SINR model for UanPhyDual
+ * Default SINR model for UanPhyDualPw
  *
  * Considers interfering packet power as additional ambient noise only
  * if there is overlap in frequency band as found from supplied UanTxMode.
  * If there is no overlap, then the packets are considered not to interfere.
  */
-class UanPhyCalcSinrDual : public UanPhyCalcSinr
+class UanPhyCalcSinrDualPw : public UanPhyCalcSinr
 {
 public:
   /** Constructor */
-  UanPhyCalcSinrDual ();
+  UanPhyCalcSinrDualPw ();
   /** Destructor */
-  virtual ~UanPhyCalcSinrDual ();
+  virtual ~UanPhyCalcSinrDualPw ();
   
   /**
    * Register this type.
@@ -62,7 +62,7 @@ public:
                              const UanTransducer::ArrivalList &arrivalList
                              ) const;
 
-};  // class UanPhyCalcSinrDual
+};  // class UanPhyCalcSinrDualPw
 
 /**
  * \ingroup uan
@@ -79,13 +79,13 @@ public:
  * Many of the standard PHY functions here become ambiguous.  In most cases
  * information for "Phy1" are returned.
  */
-class UanPhyDual : public UanPhy
+class UanPhyDualPw : public UanPhy
 {
 public:
   /** Constructor */
-  UanPhyDual ();
+  UanPhyDualPw ();
   /** Dummy destructor \see DoDispose */
-  virtual ~UanPhyDual ();
+  virtual ~UanPhyDualPw ();
 
   /**
    * Register this type.
@@ -241,19 +241,17 @@ public:
   void SetSinrModelPhy2 (Ptr<UanPhyCalcSinr> calcSinr);
 
   
-  
   /** \copydoc UanPhy::GetPacketRx */
   Ptr<Packet> GetPhy1PacketRx (void) const;
   /** \copydoc UanPhy::GetPacketRx */
   Ptr<Packet> GetPhy2PacketRx (void) const;
 
 
-  void UpdatePowerConsumption (const State);
 private:
   /** First Phy layer. */
-  Ptr<UanPhyGen> m_phy1;
+  Ptr<UanPhy> m_phy1;
   /** Second Phy layer. */
-  Ptr<UanPhyGen> m_phy2;
+  Ptr<UanPhy> m_phy2;
 
   /** A packet was received successfully. */
   ns3::TracedCallback<Ptr<const Packet>, double, UanTxMode > m_rxOkLogger;
@@ -286,7 +284,7 @@ private:
 protected:
   virtual void DoDispose ();
 
-};  // class UanPhyDual
+};  // class UanPhyDualPw
 
 } // namespace ns3
 
