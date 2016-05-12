@@ -130,6 +130,8 @@ private:
   TracedCallback<Ptr<const Packet>, uint16_t  > m_enqueueLogger;
   /** A packet was passed down to the PHY from the MAC. */
   TracedCallback<Ptr<const Packet>, uint16_t  > m_dequeueLogger;
+  
+  Address m_dest;
 
   // Mac parameters
   uint32_t m_cw;        //!< Contention window size.

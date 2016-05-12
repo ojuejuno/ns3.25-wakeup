@@ -159,4 +159,4 @@ protected:
 }
 
 
-#endif /* UAN_MAC_WAKEUP_H_ */
+#endif /* UAN_MAC_MACA_NW_H_ */

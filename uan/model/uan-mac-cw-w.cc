@@ -27,6 +27,8 @@
 #include "ns3/trace-source-accessor.h"
 #include "ns3/log.h"
 
+#include "uan-header-wakeup.h"
+
 namespace ns3 {
 
 NS_LOG_COMPONENT_DEFINE ("UanMacCwW");
@@ -143,12 +145,15 @@ UanMacCwW::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protocolNu
       NS_ASSERT (m_phy->GetTransducer ()->GetArrivalList ().size () == 0 && !m_phy->IsStateTx ());
       return false;
     case TX:
+	  NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () <<"MAC " << GetAddress () << " Starting enqueue TX");
+	  return false;
     case IDLE:
       {
         NS_ASSERT (!m_pktTx);
 
         UanHeaderCommon header;
         header.SetDest (UanAddress::ConvertFrom (dest));
+		
         header.SetSrc (m_address);
         header.SetType (0);
         packet->AddHeader (header);
@@ -158,7 +163,8 @@ UanMacCwW::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protocolNu
         if (m_phy->IsStateBusy ())
           {
             m_pktTx = packet;
-            m_pktTxProt = protocolNumber;
+            m_dest = dest;
+			m_pktTxProt = protocolNumber;
             m_state = CCABUSY;
             uint32_t cw = (uint32_t) m_rv->GetValue (0,m_cw);
             m_savedDelayS = Seconds ((double)(cw) * m_slotTime.GetSeconds ());
@@ -168,11 +174,18 @@ UanMacCwW::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protocolNu
           }
         else
           {
-            NS_ASSERT (m_state != TX);
+            
             NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << ": Addr " << GetAddress () << ": Enqueuing new packet while idle (sending)");
-            NS_ASSERT (m_phy->GetTransducer ()->GetArrivalList ().size () == 0 && !m_phy->IsStateTx ());
+            NS_ASSERT (m_state != TX);
+			NS_ASSERT (m_phy->GetTransducer ()->GetArrivalList ().size () == 0 && !m_phy->IsStateTx ());
             m_state = TX;
-            m_phy->SendPacket (packet,protocolNumber);
+			//UanWakeupTag uwt;
+			//uwt.m_type = UanWakeupTag::DATA;
+            //m_pktTx->AddPacketTag (uwt);
+			m_sendDataCallback (packet->Copy());
+			m_mac->Enqueue (packet, dest, 0);
+
+            //m_phy->SendPacket (packet,protocolNumber);
 
           }
         break;
@@ -217,11 +230,13 @@ UanMacCwW::AttachMacWakeup (Ptr<UanMacWakeup> mac)
 }
 
 
+
 Address
 UanMacCwW::GetBroadcast (void) const
 {
   return UanAddress::GetBroadcast ();
 }
+
 
 
 void
@@ -256,6 +271,10 @@ UanMacCwW::PhyStateCb (UanMacWakeup::PhyState phyState)
 
 
 
+
+
+
+
 int64_t
 UanMacCwW::AssignStreams (int64_t stream)
 {
@@ -271,6 +290,7 @@ UanMacCwW::EndTx (void)
   if (m_state == TX)
     {
       m_state = IDLE;
+	  NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () <<" ENd TX to IDLE");
     }
   else if (m_state == CCABUSY)
     {
@@ -355,8 +375,12 @@ UanMacCwW::SendPacket (void)
   NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " << GetAddress () << " Transmitting ");
   NS_ASSERT (m_state == RUNNING);
   m_state = TX;
+
+  //UanHeaderCommon pktHeader;
+ //m_pktTx->PeekHeader (pktHeader);
+  m_mac->Enqueue (m_pktTx, m_dest, 0);
+  //m_phy->SendPacket (m_pktTx,m_pktTxProt);
   m_sendDataCallback (m_pktTx->Copy());
-  m_phy->SendPacket (m_pktTx,m_pktTxProt);
   m_pktTx = 0;
   m_sendTime = Seconds (0);
   m_savedDelayS = Seconds (0);

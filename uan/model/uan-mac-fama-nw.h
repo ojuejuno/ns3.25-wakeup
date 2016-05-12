@@ -147,4 +147,4 @@ protected:
 }
 
 
-#endif /* UAN_MAC_WAKEUP_H_ */
+#endif /* UAN_MAC_FAMA_NW_H_ */
