@@ -27,10 +27,11 @@ public:
   virtual ~SimpleTest();
   void StartRun();
   void SetPhyMac();
-  void SetupWakeup();
+  void SetupWakeup(NodeContainer& nc, NodeContainer& sink);
   void ResetData();
   void ReportData();
-  void ReportPower();
+  void ReportPower(NodeContainer& nc, NodeContainer& sink);
+  void UpdatePositions (NodeContainer &nodes);
   void SinkReceiveData (Ptr<Packet> pkt, const UanAddress &src);
   void DataSent(Ptr<Packet> pkt);
   void Send (NetDeviceContainer &devices, UanAddress &uanAddress, uint8_t src);
@@ -60,11 +61,11 @@ public:
   std::vector<double> m_throughputs;
   
   UanHelper m_uan;
-  NodeContainer nc;
+  //NodeContainer nc;
   NetDeviceContainer devices;
   NetDeviceContainer devicesWakeup;
   NetDeviceContainer devicesWakeupHE;
-  NodeContainer sink;
+  //NodeContainer sink;
   NetDeviceContainer sinkDevice;
   NetDeviceContainer sinkDeviceWakeup;
   NetDeviceContainer sinkDeviceWakeupHE;
@@ -73,18 +74,18 @@ public:
   Gnuplot3dDataset m_plotData;
 private:
   Ptr<UniformRandomVariable>  m_rand;
-  //Ptr<ExponentialRandomVariable> m_randExp;
+  Ptr<ExponentialRandomVariable> m_randExp;
 };
 
 SimpleTest::SimpleTest()
 
-  : m_numNodes (2),
+  : m_numNodes (15),
    m_dataRate (1000),
    m_depth (70),
    m_boundary (500),
    m_packetSize (23),
    m_avgs (5),
-   m_maxOfferedLoad (10),
+   m_maxOfferedLoad (100),
    m_offeredLoad(1),
    m_simTime (Seconds(100)),
    m_ack (true),
@@ -97,9 +98,9 @@ SimpleTest::SimpleTest()
    m_asciitracefile ("uan-cw-example.asc")
 {   
    m_rand = CreateObject<UniformRandomVariable> ();
-   //m_randExp = CreateObject<ExponentialRandomVariable> ();
-   //m_randExp->SetAttribute ("Mean", DoubleValue (0.3));
-   //m_randExp->SetAttribute ("Bound", DoubleValue (0.9));
+   m_randExp = CreateObject<ExponentialRandomVariable> ();
+   m_randExp->SetAttribute ("Mean", DoubleValue (0.3));
+   m_randExp->SetAttribute ("Bound", DoubleValue (0.9));
 }
 
 SimpleTest::~SimpleTest()
@@ -109,6 +110,9 @@ SimpleTest::~SimpleTest()
 void
 SimpleTest::SetPhyMac()
 {
+  m_randExp->SetAttribute ("Mean", DoubleValue (m_offeredLoad*0.1));
+  m_randExp->SetAttribute ("Bound", DoubleValue (m_offeredLoad*0.3));
+  
   std::string perModel = "ns3::UanPhyPerGenDefault";
   std::string sinrModel = "ns3::UanPhyCalcSinrDefault";
 
@@ -134,7 +138,7 @@ SimpleTest::SetPhyMac()
 }
 
 void 
-SimpleTest::SetupWakeup(){
+SimpleTest::SetupWakeup( NodeContainer& nc, NodeContainer& sink){
 
    nc.Create (m_numNodes);
    sink.Create (1);
@@ -256,7 +260,7 @@ SimpleTest::SetupWakeup(){
       else
         macAlohaRts->SetSendDataCallback (MakeCallback (&SimpleTest::DataSent, this));
 
-      //macWakeup->SetSendPhyStateChangeCb (MakeCallback (&UanMacCwW::PhyStateCb, macAlohaRts));
+      macWakeup->SetSendPhyStateChangeCb (MakeCallback (&UanMacCwW::PhyStateCb, macAlohaRts));
       macWakeup->SetTxEndCallback (MakeCallback (&UanMacCwW::EndTx, macAlohaRts));
 
 
@@ -362,9 +366,11 @@ SimpleTest::SetupWakeup(){
 }
 void
 SimpleTest::StartRun(){
+    NodeContainer nc;
+    NodeContainer sink;
     
 	SetPhyMac();
-    SetupWakeup();
+    SetupWakeup(nc ,sink);
 	/*
 	PacketSocketAddress socket;
     socket.SetSingleDevice (sinkDevice.Get (0)->GetIfIndex ());
@@ -388,9 +394,11 @@ SimpleTest::StartRun(){
 
 	m_energyNodes.clear();
     m_energyNodes.push_back(0);
+	m_energySink.clear();
+	m_energySink.push_back(0);
 	
 	
-    PacketSocketAddress socket;
+    /*PacketSocketAddress socket;
     socket.SetSingleDevice (sinkDevice.Get (0)->GetIfIndex ());
     socket.SetPhysicalAddress (sinkDevice.Get (0)->GetAddress ());
     socket.SetProtocol (0);
@@ -403,30 +411,31 @@ SimpleTest::StartRun(){
     app.SetAttribute ("PacketSize", UintegerValue (m_packetSize));
 
     ApplicationContainer apps = app.Install (nc);
-    apps.Start (Seconds (0.5));
+    apps.Start (Seconds (0.5));*/
 	
 	Time nextEvent = Seconds (0.5);
     for (uint32_t an = 0; an < m_avgs; an++)
         {
         nextEvent += m_simTime;
-        Simulator::Schedule (nextEvent, &SimpleTest::ReportPower, this);
+        Simulator::Schedule (nextEvent, &SimpleTest::ReportPower, this, nc ,sink);
 		Simulator::Schedule (nextEvent, &SimpleTest::ResetData, this);
-        //Simulator::Schedule (nextEvent, &SimpleTest::UpdatePositions, this, nc);
+        Simulator::Schedule (nextEvent, &SimpleTest::UpdatePositions, this, nc);
 		//app.SetAttribute ("DataRate", DataRateValue (m_dataRate));
 		//apps = app.Install (nc);
-		/*for (uint8_t src = 0; src < devices.GetN(); src++)
+		/**/
+		}
+    Simulator::Schedule (nextEvent, &SimpleTest::ReportData, this);
+	Simulator::Stop (nextEvent+Seconds(0.5)+ m_simTime);
+    //apps.Stop (nextEvent + m_simTime);
+	//appSinks.Stop (nextEvent + m_simTime);
+	for (uint8_t src = 0; src < devices.GetN(); src++)
     {
       UanAddress uanDst (m_numNodes);
       double time = m_randExp->GetValue();
       Simulator::Schedule(Seconds (time), &SimpleTest::Send, this, devices, uanDst, src);
-    }*/
-		}
-    Simulator::Schedule (nextEvent, &SimpleTest::ReportData, this);
-	
-    apps.Stop (nextEvent + m_simTime);
-	//appSinks.Stop (nextEvent + m_simTime);
-	
-	Ptr<Node> sinkNode = sink.Get (0);
+
+    }
+	/*Ptr<Node> sinkNode = sink.Get (0);
     TypeId psfid = TypeId::LookupByName ("ns3::PacketSocketFactory");
     if (sinkNode->GetObject<SocketFactory> (psfid) == 0)
       {
@@ -434,7 +443,7 @@ SimpleTest::StartRun(){
         sinkNode->AggregateObject (psf);
       }
     Ptr<Socket> sinkSocket = Socket::CreateSocket (sinkNode, psfid);
-    sinkSocket->Bind (socket);
+    sinkSocket->Bind (socket);*/
     //sinkSocket->SetRecvCallback (MakeCallback (&SimpleTest::ReceivePacket, this));
 
 
@@ -472,7 +481,7 @@ SimpleTest::StartRun(){
 
 }
 
-/*void
+void
 SimpleTest::Send (NetDeviceContainer &devices, UanAddress &uanAddress, uint8_t src)
 {
   Ptr<Packet> pkt = Create<Packet> (m_packetSize);
@@ -493,20 +502,20 @@ SimpleTest::Send (NetDeviceContainer &devices, UanAddress &uanAddress, uint8_t s
       Simulator::Schedule(Seconds (time), &SimpleTest::Send, this, devices, uanDst, src);
    // }
 }
-*/
+
 
 void
 SimpleTest::ResetData ()
 {
-  NS_LOG_DEBUG (Simulator::Now ().GetSeconds () << " Throughput "<<(m_receivedPackets)<<" ,Packet received "<<m_receivedPackets);
+  NS_LOG_DEBUG (Simulator::Now ().GetSeconds () << " Packet Sent "<<(m_sentPackets)<<" ,Packet received "<<m_receivedPackets);
   m_PacketsCount.push_back (m_sentPackets);
-  m_throughputs.push_back (m_receivedPackets);
+  m_throughputs.push_back (m_receivedPackets*m_packetSize*8.0 / m_simTime.GetSeconds ());
   m_receivedPackets = 0;
   m_sentPackets=0;
 }
 
 void
-SimpleTest::ReportPower ()
+SimpleTest::ReportPower (NodeContainer& nc, NodeContainer& sink)
 {
     double accumEnergy = 0;
 	for (uint32_t i = 0; i < nc.GetN (); i++)
@@ -552,6 +561,23 @@ SimpleTest::ReportData()
 }
 
 void
+SimpleTest::UpdatePositions (NodeContainer &nodes)
+{
+
+  NS_LOG_DEBUG (Simulator::Now ().GetSeconds () << " Updating positions");
+  NodeContainer::Iterator it = nodes.Begin ();
+  Ptr<UniformRandomVariable> uv = CreateObject<UniformRandomVariable> ();
+  for (; it != nodes.End (); it++)
+    {
+      Ptr<MobilityModel> mp = (*it)->GetObject<MobilityModel> ();
+      mp->SetPosition (Vector (uv->GetValue (0, m_boundary), uv->GetValue (0, m_boundary), 70.0));
+    }
+	 // if (m_offeredLoad<=1)
+    //Simulator::Stop(m_simTime);
+}
+
+
+void
 SimpleTest::SinkReceiveData (Ptr<Packet> pkt, const UanAddress &src)
 {
   
@@ -571,8 +597,8 @@ main (int argc, char **argv)
 {
 
   LogComponentEnable ("WakeupTestSimple", LOG_LEVEL_ALL);
-  LogComponentEnable ("UanMacCwW", LOG_LEVEL_ALL);
- 
+  //LogComponentEnable ("UanMacCwW", LOG_LEVEL_ALL);
+  //LogComponentEnable ("UanMacWakeup", LOG_LEVEL_ALL);
 
   SimpleTest exp;
 
@@ -590,7 +616,10 @@ main (int argc, char **argv)
   //cmd.AddValue ("SinrModel", "SINR model name", sinrModel);
   cmd.Parse (argc, argv);
 
-  exp.StartRun();
+  for(exp.m_offeredLoad=exp.m_maxOfferedLoad; exp.m_offeredLoad>=1;exp.m_offeredLoad-=4)
+  {
+    exp.StartRun();
+  }
   
 	
 	

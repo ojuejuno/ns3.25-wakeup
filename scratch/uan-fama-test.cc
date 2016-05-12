@@ -195,9 +195,10 @@ Experiment::ReceivePacket (Ptr<Packet> packet, const UanAddress &src)
 void
 Experiment::Run (UanHelper &uan)
 {
+  uan.SetMac ("ns3::UanMacTlohiNW");
   //uan.SetMac ("ns3::UanMacMacaNW");
   //uan.SetMac ("ns3::UanMacFamaNW");
-  uan.SetMac ("ns3::UanMacAlohaCs", "CW", UintegerValue (34));
+  //uan.SetMac ("ns3::UanMacAlohaCs", "CW", UintegerValue (34));
   //uan.SetMac ("ns3::UanMacAloha");
   //uan.SetMac ("ns3::UanMacCw", "CW", UintegerValue (m_cwMin), "SlotTime", TimeValue (m_slotTime));//uan.SetMac ("ns3::UanMacAloha");
   NodeContainer nc = NodeContainer ();
@@ -305,13 +306,13 @@ Experiment::Run (UanHelper &uan)
 	*/
 	for(uint32_t i = 0; i < m_numNodes; i++){
 	  Ptr<UanMac> mac = DynamicCast<UanNetDevice> (devices.Get(i))->GetMac ();
-	  Ptr<UanMacAlohaCs> macFama = DynamicCast<UanMacAlohaCs> (mac);
+	  Ptr<UanMacTlohiNW> macFama = DynamicCast<UanMacTlohiNW> (mac);
 	  UanAddress uanAddress(i);
 	  macFama->SetAddress(uanAddress);
 	}
 	
 	Ptr<UanMac> mac = DynamicCast<UanNetDevice> (sinkdev.Get(0))->GetMac ();
-	Ptr<UanMacAlohaCs> macFama = DynamicCast<UanMacAlohaCs> (mac);
+	Ptr<UanMacTlohiNW> macFama = DynamicCast<UanMacTlohiNW> (mac);
 	macFama->SetForwardUpCb(MakeCallback(&Experiment::ReceivePacket, this));
 	UanAddress uanAddress(m_numNodes);
 	macFama->SetAddress(uanAddress);
@@ -417,7 +418,7 @@ main (int argc, char **argv)
 
   LogComponentEnable ("UanCwExample", LOG_LEVEL_ALL);
   //LogComponentEnable ("UanMacMacaNW", LOG_LEVEL_ALL);
-  
+  //LogComponentEnable ("UanMacTlohiNW", LOG_LEVEL_ALL);
 
   Experiment exp;
 

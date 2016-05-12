@@ -31,6 +31,7 @@ public:
   void ResetData();
   void ReportData();
   void ReportPower(NodeContainer& nc, NodeContainer& sink);
+  void UpdatePositions (NodeContainer &nodes);
   void SinkReceiveData (Ptr<Packet> pkt, const UanAddress &src);
   void DataSent(Ptr<Packet> pkt);
   void Send (NetDeviceContainer &devices, UanAddress &uanAddress, uint8_t src);
@@ -421,7 +422,7 @@ SimpleTest::StartRun(){
         nextEvent += m_simTime;
         Simulator::Schedule (nextEvent, &SimpleTest::ReportPower, this, nc ,sink);
 		Simulator::Schedule (nextEvent, &SimpleTest::ResetData, this);
-        //Simulator::Schedule (nextEvent, &SimpleTest::UpdatePositions, this, nc);
+        Simulator::Schedule (nextEvent, &SimpleTest::UpdatePositions, this, nc);
 		//app.SetAttribute ("DataRate", DataRateValue (m_dataRate));
 		//apps = app.Install (nc);
 		
@@ -577,6 +578,21 @@ SimpleTest::ReportData()
 	avgPower = m_energyNodes.back();
 	m_energyNodes.clear ();
 	m_energyNodes.push_back(avgPower);
+}
+void
+SimpleTest::UpdatePositions (NodeContainer &nodes)
+{
+
+  NS_LOG_DEBUG (Simulator::Now ().GetSeconds () << " Updating positions");
+  NodeContainer::Iterator it = nodes.Begin ();
+  Ptr<UniformRandomVariable> uv = CreateObject<UniformRandomVariable> ();
+  for (; it != nodes.End (); it++)
+    {
+      Ptr<MobilityModel> mp = (*it)->GetObject<MobilityModel> ();
+      mp->SetPosition (Vector (uv->GetValue (0, m_boundary), uv->GetValue (0, m_boundary), 70.0));
+    }
+	 // if (m_offeredLoad<=1)
+    //Simulator::Stop(m_simTime);
 }
 
 void
