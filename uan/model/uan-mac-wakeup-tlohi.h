@@ -18,8 +18,8 @@
  * Author: Salvador Climent <jocliba@upvnet.upv.es>
  */
 
-#ifndef UAN_MAC_WAKEUP_H_
-#define UAN_MAC_WAKEUP_H_
+#ifndef UAN_MAC_WAKEUP_TLOHI_H_
+#define UAN_MAC_WAKEUP_TLOHI_H_
 
 #include "uan-mac.h"
 #include "uan-address.h"
@@ -38,7 +38,7 @@ namespace ns3
 class UanPhy;
 class UanTxMode;
 
-class UanMacWakeup : public UanMac, public UanPhyListener
+class UanMacWakeupTlohi : public UanMac, public UanPhyListener
 {
 public:
   enum PhyState { BUSY, IDLE };
@@ -46,8 +46,8 @@ public:
   typedef Callback<void> TxEndCallback;
   typedef Callback<void> ToneRxCallback;
 
-  UanMacWakeup ();
-  virtual ~UanMacWakeup ();
+  UanMacWakeupTlohi ();
+  virtual ~UanMacWakeupTlohi ();
   static TypeId GetTypeId (void);
 
 
@@ -66,7 +66,7 @@ public:
 
   bool Send ();
   void SendWU (UanAddress dst);
-  bool SendWUAlone (UanAddress dst);
+  bool SendCTDTone ();
   //void SendWUHE ();
   void SendBroadcastWU ();
 
@@ -180,4 +180,4 @@ protected:
 }
 
 
-#endif /* UAN_MAC_WAKEUP_H_ */
+#endif /* UAN_MAC_WAKEUP_TLOHI_H_ */

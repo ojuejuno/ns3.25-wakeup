@@ -348,7 +348,8 @@ UanMacAlohaCs::PhyRxPacketGood (Ptr<Packet> packet, double sinr, UanTxMode mode)
 
   if (header.GetDest () == m_address || header.GetDest () == UanAddress::GetBroadcast ())
     {
-      m_forwardUpCb (packet, header.GetSrc ());
+      NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Rx DATA from " << header.GetSrc () <<" ***************************");
+	  m_forwardUpCb (packet, header.GetSrc ());
     }
 }
 void

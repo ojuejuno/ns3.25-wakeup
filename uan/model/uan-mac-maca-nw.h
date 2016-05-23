@@ -136,6 +136,7 @@ private:
   //bool SendWakeupBroadcast (Ptr<Packet> pkt);
   
   void BackoffNextSend ();
+  void BackoffNextSend (bool b);
   
 
   /**

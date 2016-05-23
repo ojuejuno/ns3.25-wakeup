@@ -42,6 +42,7 @@ class UanMacFamaNW : public UanMac
 {
 public:
   enum TYPE {RTS, CTS, DATA, ACK};
+  enum MACSTATE {IDLE, CONTEND, WFCTS, SDATA, WFDATA, WFACK, BACKOFF, RX};
 
   UanMacFamaNW ();
   virtual ~UanMacFamaNW ();
@@ -59,7 +60,8 @@ public:
   virtual void Clear (void);
 
   void TxEnd ();
-
+  void StartContend();
+  void StopTimer();
   void SetUseAck (bool ack);
   bool GetUseAck () const;
 
@@ -94,10 +96,15 @@ private:
   Ptr<Packet> m_pkt;
   UanAddress m_dest;
 
-  Timer m_timerBackoff;
+  Timer m_timerCONTEND;
   Timer m_timerWaitToBackoff;
+  Timer m_timerWfCTS;
+  Timer m_timerWfDATA;
+  Timer m_timerBackoff;
+  Timer m_timerWfACK;
 
   UanMacWakeup::PhyState m_state;
+  MACSTATE m_macState;
 
   double m_maxBackoff;
   double m_maxPropTime;
@@ -115,8 +122,12 @@ private:
   uint8_t m_maxBulkSend;
   uint8_t m_bulkSend;
 
-  void On_timerBackoff (void);
+  void On_timerCONTEND (void);
   void On_timerWaitToBackoff (void);
+  void On_timerWfCTS(void);
+  void On_timerWfDATA(void);
+  void On_timerBackoff(void);
+  void On_timerWfACK(void);
 
   bool SendRTS ();
   bool SendCTS (const Address &dest, const double duration);

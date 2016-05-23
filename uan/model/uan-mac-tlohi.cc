@@ -2,7 +2,7 @@
 #include "uan-header-common.h"
 #include "uan-header-wakeup.h"
 
-#include "uan-mac-tlohi-nw.h"
+#include "uan-mac-tlohi.h"
 #include "uan-tx-mode.h"
 #include "uan-address.h"
 #include "ns3/log.h"
@@ -15,16 +15,17 @@
 #include "ns3/uinteger.h"
 #include "ns3/double.h"
 #include "ns3/nstime.h"
-
+#include "ns3/uan-mac-wakeup-tlohi.h"
+#include "ns3/uan-module.h"
 #include <iostream>
 
 namespace ns3
 {
-NS_LOG_COMPONENT_DEFINE ("UanMacTlohiNW");
-NS_OBJECT_ENSURE_REGISTERED (UanMacTlohiNW);
+NS_LOG_COMPONENT_DEFINE ("UanMacTlohi");
+NS_OBJECT_ENSURE_REGISTERED (UanMacTlohi);
   
   
-UanMacTlohiNW::UanMacTlohiNW()
+UanMacTlohi::UanMacTlohi()
   :m_Ttlohi(0.024),
   m_Tmax(0.47),
   m_state(IDLE),
@@ -32,22 +33,24 @@ UanMacTlohiNW::UanMacTlohiNW()
   m_CTC(1),
   m_sizeCTD(3)
 {
+  m_cleared = false;
   Clear();
   m_CRWindow = (m_Tmax + m_Ttlohi)* 1.0 ;
-  m_timerCR.SetFunction (&UanMacTlohiNW::on_timerCR,this);
-  m_timerBkoffCR.SetFunction (&UanMacTlohiNW::on_timerBkoffCR,this);
-  m_timerMaxFrame.SetFunction (&UanMacTlohiNW::on_timerMaxFrame,this);
-
+  m_timerCR.SetFunction (&UanMacTlohi::on_timerCR,this);
+  m_timerBkoffCR.SetFunction (&UanMacTlohi::on_timerBkoffCR,this);
+  m_timerMaxFrame.SetFunction (&UanMacTlohi::on_timerMaxFrame,this);
+  
+  m_ultra = true;
 }
 
-UanMacTlohiNW::~UanMacTlohiNW(){
+UanMacTlohi::~UanMacTlohi(){
   m_timerBkoffCR.Cancel();
   m_timerCR.Cancel();
   m_timerMaxFrame.Cancel();
   }
   
 void
-UanMacTlohiNW::Clear ()
+UanMacTlohi::Clear ()
 {
   if (m_cleared)
     {
@@ -71,28 +74,29 @@ UanMacTlohiNW::Clear ()
 }
 
 void
-UanMacTlohiNW::DoDispose ()
+UanMacTlohi::DoDispose ()
 {
   Clear ();
   UanMac::DoDispose ();
 }
 
 TypeId
-UanMacTlohiNW::GetTypeId (void)
+UanMacTlohi::GetTypeId (void)
 {
-  static TypeId tid = TypeId ("ns3::UanMacTlohiNW")
+  static TypeId tid = TypeId ("ns3::UanMacTlohi")
     .SetParent<Object> ()
 	.SetGroupName ("Uan")
-    .AddConstructor<UanMacTlohiNW> ()
+    .AddConstructor<UanMacTlohi> ()
   ;
   return tid;
 }
   
 bool
-UanMacTlohiNW::Enqueue(Ptr<Packet> packet, const Address &dest, uint16_t protocolNumber){
+UanMacTlohi::Enqueue(Ptr<Packet> packet, const Address &dest, uint16_t protocolNumber){
   UanHeaderCommon header;
   header.SetDest(UanAddress::ConvertFrom (dest));
   packet->AddHeader(header);
+  DynamicCast<UanMacWakeupTlohi> (m_mac)->SetSleepMode (false);
   if(m_sendQueue.size() < 10){
     m_sendQueue.push(packet);
     NS_LOG_DEBUG(" " << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" packet queueing increase to "<<m_sendQueue.size());
@@ -103,40 +107,45 @@ UanMacTlohiNW::Enqueue(Ptr<Packet> packet, const Address &dest, uint16_t protoco
       m_timerMaxFrame.Schedule(Seconds(m_CRWindow*30));
       m_state = ENDFRAME;//Wait for frame end
 	  NS_LOG_DEBUG(" " << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" quit frame from idle(enqueue) This should not happen too !!!!!!");
+      if (m_ultra){
+	    DynamicCast<UanMacWakeupTlohi> (m_mac)->SetSleepMode (true);
+	  }
   }}
   if(m_state == IDLE && (!m_blocking)){
     NS_ASSERT(!(m_timerCR.IsRunning() || m_timerBkoffCR.IsRunning() || m_timerMaxFrame.IsRunning()) );
 	TxCTD();
   }
-  else if(!(m_timerCR.IsRunning() || m_timerBkoffCR.IsRunning()|| m_timerMaxFrame.IsRunning())){
+  else if(!(m_timerCR.IsRunning() || m_timerBkoffCR.IsRunning()|| m_timerMaxFrame.IsRunning())&& (!m_blocking)){
     NS_ASSERT(m_state != BKOFF);
 	NS_LOG_DEBUG(" " << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" This should logically not appear!!!!!!!!!!!!!!!");
     TxCTD();
   }
   return true;
 }
-  
-void
-UanMacTlohiNW::RxPacket(Ptr<Packet> pkt,  double sinr, UanTxMode mode){
+
+/*void
+UanMacTlohi::RxPacket(Ptr<Packet> pkt, const UanAddress& add){
   m_pkt = pkt;
   UanHeaderCommon header;
   pkt->RemoveHeader (header);
   UanAddress dest = header.GetDest();
   
-  if(dest == GetBroadcast())
-    RxCTD();
-  else
+  //if(dest != GetBroadcast()){
     RxData(dest);
-}
+  }
+}*/
 
 void
-UanMacTlohiNW::RxCTD(){
+UanMacTlohi::RxCTD(){
   if(!m_blocking){
     switch(m_state){
       case IDLE:
 	    m_blocking = true;
 		m_timerMaxFrame.Schedule(Seconds(m_CRWindow*30));
 		m_state = ENDFRAME;//Wait for frame end
+		if (m_ultra){
+	      DynamicCast<UanMacWakeupTlohi> (m_mac)->SetSleepMode (true);
+	    }
 		NS_LOG_DEBUG(" " << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" quit frame from idle");
 	    break;
       case CONTEND:
@@ -147,7 +156,9 @@ UanMacTlohiNW::RxCTD(){
       case BKOFF:
         NS_ASSERT(m_timerBkoffCR.IsRunning());
         m_timerBkoffCR.Cancel();
-		
+		if (m_ultra){
+	      DynamicCast<UanMacWakeupTlohi> (m_mac)->SetSleepMode (true);
+	    }
         m_blocking = true;//Wait for frame end
 		m_timerMaxFrame.Schedule(Seconds(m_CRWindow*30));
 	    m_state = ENDFRAME;
@@ -161,7 +172,12 @@ UanMacTlohiNW::RxCTD(){
 }
 
 void
-UanMacTlohiNW::RxData(UanAddress dest){
+UanMacTlohi::RxData(Ptr<Packet> pkt, const UanAddress& add){
+  DynamicCast<UanMacWakeupTlohi> (m_mac)->SetSleepMode (false);
+  m_pkt = pkt;
+  UanHeaderCommon header;
+  pkt->RemoveHeader (header);
+  UanAddress dest = header.GetDest();
   
   if(dest == GetAddress()){
     m_forUpCb(m_pkt, dest);
@@ -181,22 +197,25 @@ UanMacTlohiNW::RxData(UanAddress dest){
 	}
   else{
 	m_state = IDLE;
+	DynamicCast<UanMacWakeupTlohi> (m_mac)->SetSleepMode (true);
   }
 
 }
 
 void
-UanMacTlohiNW::TxCTD(){
+UanMacTlohi::TxCTD(){
 
   
-  Ptr<Packet> packetCTD = Create<Packet> ();
-  UanHeaderCommon headerCTD;
-  headerCTD.SetDest(UanAddress::ConvertFrom(GetBroadcast()));
-  packetCTD->AddHeader(headerCTD);
+  //Ptr<Packet> packetCTD = Create<Packet> ();
+  //UanHeaderCommon headerCTD;
+  //headerCTD.SetDest(UanAddress::ConvertFrom(GetBroadcast()));
+  //packetCTD->AddHeader(headerCTD);
   
   //if(!m_phy->IsStateBusy()){
+    DynamicCast<UanMacWakeupTlohi> (m_mac)->SetSleepMode (false);
     NS_LOG_DEBUG(" " << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" CONTENDING");
-    m_phy->SendPacket (packetCTD, 0);
+    DynamicCast<UanMacWakeupTlohi> (m_mac) -> SendCTDTone();
+	//m_phy->SendPacket (packetCTD, 0);
     m_timerCR.Schedule(Seconds(m_CRWindow));
     m_state = CONTEND;
     m_CTC = 1;
@@ -204,22 +223,39 @@ UanMacTlohiNW::TxCTD(){
 }
 
 bool
-UanMacTlohiNW::TxData(){
+UanMacTlohi::TxData(){
   NS_ASSERT( !m_blocking );
   Ptr<Packet> packetData = m_sendQueue.front();
+  UanHeaderCommon header ;
+  packetData->PeekHeader (header);
+  UanAddress dest =header.GetDest();
+  
   if(!m_phy->IsStateBusy()){
-    m_phy->SendPacket(packetData->Copy(),0);
+    //m_phy->SendPacket(packetData->Copy(),0);
+	m_mac->Enqueue(packetData->Copy(),dest,0);
 	NS_LOG_DEBUG(" " << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" SentData");
 	 //m_sendDataCallback(packetData);
     m_sendQueue.pop();
 	m_state = IDLE;
+	if(!m_sendQueue.size()){
+	  DynamicCast<UanMacWakeupTlohi> (m_mac)->SetSleepMode (true);
+	}
 	return true;
   }
   return false;
 }
 
 void
-UanMacTlohiNW::on_timerCR(){
+UanMacTlohi::TxEnd(){
+  if(!(m_sendQueue.size()) && m_state == IDLE){
+	if (m_ultra){
+	    DynamicCast<UanMacWakeupTlohi> (m_mac)->SetSleepMode (true);
+	  }
+  }
+}
+
+void
+UanMacTlohi::on_timerCR(){
   if(m_CTC > 1){
     Ptr<UniformRandomVariable> rand = CreateObject<UniformRandomVariable>() ;
     uint32_t backoffCR = (uint32_t)rand-> GetValue(0,double(m_CTC));
@@ -234,58 +270,77 @@ UanMacTlohiNW::on_timerCR(){
 }
 
 void
-UanMacTlohiNW::on_timerBkoffCR(){
+UanMacTlohi::on_timerBkoffCR(){
   NS_ASSERT( !m_blocking );
   TxCTD();
 }
 void
-UanMacTlohiNW::on_timerMaxFrame(){	
+UanMacTlohi::on_timerMaxFrame(){	
   m_blocking = false;
+  if (m_ultra){
+	    DynamicCast<UanMacWakeupTlohi> (m_mac)->SetSleepMode (false);
+	  }
   if(m_sendQueue.size()){
 	TxCTD();
   }
   else
 	m_state = IDLE;
+	DynamicCast<UanMacWakeupTlohi> (m_mac)->SetSleepMode (true);
 }
 void
-UanMacTlohiNW::AttachPhy (Ptr<UanPhy> phy)
+UanMacTlohi::AttachPhy (Ptr<UanPhy> phy)
 {
   m_phy = phy;
-  DynamicCast<UanPhyGen> (m_phy) -> SetReceiveOkCallback (MakeCallback (&UanMacTlohiNW::RxPacket, this));	
+  //DynamicCast<UanPhyGen> (m_phy) -> SetReceiveOkCallback (MakeCallback (&UanMacTlohi::RxPacket, this));	
+}
+
+void
+UanMacTlohi::AttachMacWakeup (Ptr<UanMac> mac)
+{
+  m_mac = mac;
+  DynamicCast<UanMacWakeupTlohi> (m_mac) -> SetForwardUpCb (MakeCallback(&UanMacTlohi::RxData,this));
+  
+  DynamicCast<UanMacWakeupTlohi> (m_mac) -> SetToneMode();
+  
+}
+
+void
+UanMacTlohi::SetUltra(bool isUltra){
+  m_ultra = isUltra;
 }
 
 Address
-UanMacTlohiNW::GetAddress (void)
+UanMacTlohi::GetAddress (void)
 {
   return this->m_address;
 }
 
 void
-UanMacTlohiNW::SetAddress (UanAddress addr)
+UanMacTlohi::SetAddress (UanAddress addr)
 {
   m_address = addr;
 }
 
 
 void
-UanMacTlohiNW::SetForwardUpCb (Callback<void, Ptr<Packet>, const UanAddress& > cb){
+UanMacTlohi::SetForwardUpCb (Callback<void, Ptr<Packet>, const UanAddress& > cb){
   m_forUpCb = cb;
 }
 
 void
-UanMacTlohiNW::SetSendDatacb (Callback<void, Ptr<Packet> > cb){
+UanMacTlohi::SetSendDatacb (Callback<void, Ptr<Packet> > cb){
   m_sendDataCallback = cb;
 }
 
 Address
-UanMacTlohiNW::GetBroadcast (void) const
+UanMacTlohi::GetBroadcast (void) const
 {
   UanAddress broadcast (255);
   return broadcast;
 }
 
 int64_t
-UanMacTlohiNW::AssignStreams (int64_t stream)
+UanMacTlohi::AssignStreams (int64_t stream)
 {
   NS_LOG_FUNCTION (this << stream);
   //m_rand->SetStream (stream);

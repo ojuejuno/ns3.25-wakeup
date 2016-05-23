@@ -188,4 +188,4 @@ protected:
 
 } // namespace ns3
 
-#endif /* UAN_MAC_CW_H */
+#endif /* UAN_MAC_ALOHA_CS_H */

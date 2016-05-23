@@ -1,8 +1,8 @@
 /* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 
 
-#ifndef UAN_MAC_TLOHI_NW_H_
-#define UAN_MAC_TLOHI_NW_H_
+#ifndef UAN_MAC_TLOHI_U_H_
+#define UAN_MAC_TLOHI_U_H_
 
 #include "uan-mac.h"
 #include "uan-address.h"
@@ -19,7 +19,7 @@ namespace ns3
 class UanPhy;
 class UanTxMode;
 
-class UanMacTlohiNW : public UanMac
+class UanMacTlohiU : public UanMac
 {
 public:
   enum State{IDLE, CONTEND, BKOFF, ENDFRAME};
@@ -37,14 +37,15 @@ public:
   Callback<void, Ptr<Packet> > m_sendDataCallback;
   Address m_address;
   Ptr<UanPhy> m_phy;
+  Ptr<UanMac> m_mac;
   bool m_cleared;
   
   Timer m_timerBkoffCR;
   Timer m_timerCR;
   Timer m_timerMaxFrame;
   
-  UanMacTlohiNW ();
-  virtual ~UanMacTlohiNW ();
+  UanMacTlohiU ();
+  virtual ~UanMacTlohiU ();
   static TypeId GetTypeId (void);
   
   //Inheritted functions
@@ -53,16 +54,20 @@ public:
   virtual bool Enqueue (Ptr<Packet> pkt, const Address &dest, uint16_t protocolNumber);
   virtual void SetForwardUpCb (Callback<void, Ptr<Packet>, const UanAddress& > cb);
   virtual void AttachPhy (Ptr<UanPhy> phy);
+  void AttachMacWakeup (Ptr<UanMac> mac);
   virtual Address GetBroadcast (void) const;
   virtual void Clear (void);
   int64_t AssignStreams(int64_t stream);
   
-  void RxPacket (Ptr<Packet> pkt, double sinr, UanTxMode mode);
+  //void RxPacket (Ptr<Packet> pkt, double sinr, UanTxMode mode);
   void SetSendDatacb (Callback<void, Ptr<Packet> > cb);
   
-private:
+  void TxEnd();
+  void RxData(Ptr<Packet> pkt, const UanAddress& add);
   void RxCTD();
-  void RxData(UanAddress dest);
+private:
+
+
   void TxCTD();
   bool TxData();
   
@@ -77,4 +82,4 @@ protected:
 };
 }
 
-#endif /* UAN_MAC_TLOHI_NW_H_ */
+#endif /* UAN_MAC_TLOHI_U_H_ */

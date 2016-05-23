@@ -18,8 +18,8 @@
  * Author: Salvador Climent <jocliba@upvnet.upv.es>
  */
 
-#ifndef UAN_MAC_FAMA_H_
-#define UAN_MAC_FAMA_H_
+#ifndef UAN_MAC_MACA_H_
+#define UAN_MAC_MACA_H_
 
 #include "uan-mac.h"
 #include "uan-address.h"
@@ -28,7 +28,7 @@
 #include "ns3/timer.h"
 #include "ns3/uan-phy.h"
 #include "uan-mac-wakeup.h"
-
+#include "ns3/uan-module.h"
 #include <queue>
 
 namespace ns3
@@ -38,14 +38,14 @@ namespace ns3
 class UanPhy;
 class UanTxMode;
 
-class UanMacFama : public UanMac
+class UanMacMaca : public UanMac
 {
 public:
+  enum MACASTATE {IDLE, CONTEND, WFCTS, WFDATA, QUIET};
   enum TYPE {RTS, CTS, DATA, ACK};
-  enum MACSTATE {IDLE, CONTEND, WFCTS, SDATA, WFDATA, WFACK, BACKOFF, RX};
 
-  UanMacFama ();
-  virtual ~UanMacFama ();
+  UanMacMaca ();
+  virtual ~UanMacMaca ();
   static TypeId GetTypeId (void);
 
 
@@ -55,36 +55,31 @@ public:
   virtual bool Enqueue (Ptr<Packet> pkt, const Address &dest, uint16_t protocolNumber);
   virtual void SetForwardUpCb (Callback<void, Ptr<Packet>, const UanAddress& > cb);
   virtual void AttachPhy (Ptr<UanPhy> phy);
-  void AttachMacWakeup (Ptr<UanMacWakeup> mac);
+  void AttachMacWakeup (Ptr<UanMacWakeupMaca> mac);
   virtual Address GetBroadcast (void) const;
   virtual void Clear (void);
-  int64_t AssignStreams (int64_t stream);
 
-  void TxEnd ();
+  //void TxEnd ();
 
-  void StartContend();
-  void StopTimer();
-  void SetUseAck (bool ack);
-  bool GetUseAck () const;
-
-  void RxPacket (Ptr<Packet> pkt, const UanAddress& addr);
+  void RxPacket (Ptr<Packet> pkt,const UanAddress& dst);
   bool Send ();
 
   void SetSendDataCallback (Callback<void, Ptr<Packet> > sendDataCallback);
 
-  void PhyStateCb (UanMacWakeup::PhyState phyState);
+  //void PhyStateCb (UanMacWakeup::PhyState phyState);
 
   void SetBackoffTime (double backoff);
   double GetBackoffTime ();
   void SetRtsSize (uint32_t size);
   uint32_t GetRtsSize () const;
 
-  void SetBulkSend (uint8_t bulkSend);
-
+  int64_t AssignStreams(int64_t stream);
 private:
   Ptr<UniformRandomVariable> m_rand;
 
+  std::queue<Ptr<Packet> > m_relayQueue;
   std::queue<Ptr<Packet> > m_sendQueue;
+  
 
   Callback<void, Ptr<Packet> > m_sendDataCallback;
 
@@ -98,23 +93,22 @@ private:
   Ptr<Packet> m_pkt;
   UanAddress m_dest;
 
-  Timer m_timerCONTEND;
-  Timer m_timerWaitToBackoff;
-  Timer m_timerWfCTS;
-  Timer m_timerWfDATA;
-  Timer m_timerBackoff;
-  Timer m_timerWfACK;
-
+  Timer m_timerSendBackoff;
+  Timer m_timerQuiet;
+  Timer m_timerWFCTS;
+  
   UanMacWakeup::PhyState m_state;
-  MACSTATE m_macState;
+  MACASTATE m_macaState;
+  MACASTATE m_lastState;
 
   double m_maxBackoff;
   double m_maxPropTime;
   uint32_t m_maxPacketSize;
   uint32_t m_rtsSize;
-  bool m_useAck;
   bool m_sendingData;
-
+ 
+  double m_tCTS;
+  double m_tDATA;
   // Working packet
   UanAddress m_rxSrc;
   UanAddress m_rxDest;
@@ -124,19 +118,26 @@ private:
   uint8_t m_maxBulkSend;
   uint8_t m_bulkSend;
 
-  void On_timerCONTEND (void);
-  void On_timerWaitToBackoff (void);
-  void On_timerWfCTS(void);
-  void On_timerWfDATA(void);
-  void On_timerBackoff(void);
-  void On_timerWfACK(void);
+  
+  uint8_t m_countBEB;
+  uint8_t m_minBEB;
+  uint8_t m_maxBEB;
+  
+  void OntimerSendBackoff (void);
+  void OntimerQuiet (void);
+  void OntimerWFCTS (void);
+  
+
   bool SendRTS ();
   bool SendCTS (const Address &dest, const double duration);
   bool Send (Ptr<Packet> pkt);
-  bool SendAck (const UanAddress& dest);
-  void RxRTS (Ptr<Packet> pkt);
-  void RxCTS (Ptr<Packet> pkt);
-  bool SendWakeupBroadcast (Ptr<Packet> pkt);
+  void RxRTS (Ptr<Packet> pkt,const UanAddress& dst);
+  void RxCTS (Ptr<Packet> pkt ,const UanAddress& dst);
+  //bool SendWakeupBroadcast (Ptr<Packet> pkt);
+  
+  void BackoffNextSend ();
+  void BackoffNextSend (bool b);
+  
 
   /**
    * \brief Receive packet from lower layer (passed to PHY as callback)
@@ -159,4 +160,4 @@ protected:
 }
 
 
-#endif /* UAN_MAC_FAMA_H_ */
+#endif /* UAN_MAC_MACA_H_ */

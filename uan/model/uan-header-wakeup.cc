@@ -396,6 +396,12 @@ UanWakeupTag::Print (std::ostream &os) const
   case DATA:
     print = "DATA";
     break;
+  case CTD:
+    print = "CTD";
+	break;
+  case CTS:
+    print = "CTS";
+	break;
   }
 
   os << "type = " << print;

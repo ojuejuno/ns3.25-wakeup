@@ -18,7 +18,7 @@
  * Author: Salvador Climent <jocliba@upvnet.upv.es>
  */
 
-#include "uan-mac-wakeup.h"
+#include "uan-mac-wakeup-maca.h"
 #include "uan-tx-mode.h"
 #include "uan-address.h"
 #include "ns3/log.h"
@@ -27,7 +27,7 @@
 #include "uan-header-wakeup.h"
 //#include "uan-mac-rts.h"
 #include "uan-phy-header.h"
-
+#include "ns3/uan-module.h"
 
 #include <iostream>
 
@@ -36,19 +36,19 @@
 namespace ns3
 {
 
-NS_LOG_COMPONENT_DEFINE ("UanMacWakeup");
-NS_OBJECT_ENSURE_REGISTERED (UanMacWakeup);
+NS_LOG_COMPONENT_DEFINE ("UanMacWakeupMaca");
+NS_OBJECT_ENSURE_REGISTERED (UanMacWakeupMaca);
 
-UanMacWakeup::UanMacWakeup ()
+UanMacWakeupMaca::UanMacWakeupMaca ()
   : UanMac (),
     m_cleared (false),
     m_timeDelayTx (1),
     m_dataSent (false)
 {
-  m_timerEndTx.SetFunction (&UanMacWakeup::On_timerEndTx, this);
-  m_timerDelayTx.SetFunction (&UanMacWakeup::On_timerDelayTx, this);
-  //m_timerDelayTxWUHE.SetFunction (&UanMacWakeup::On_timerDelayTxWUHE, this);
-  m_timerTxFail.SetFunction (&UanMacWakeup::On_timerTxFail, this);
+  m_timerEndTx.SetFunction (&UanMacWakeupMaca::On_timerEndTx, this);
+  m_timerDelayTx.SetFunction (&UanMacWakeupMaca::On_timerDelayTx, this);
+  //m_timerDelayTxWUHE.SetFunction (&UanMacWakeupMaca::On_timerDelayTxWUHE, this);
+  m_timerTxFail.SetFunction (&UanMacWakeupMaca::On_timerTxFail, this);
 
   m_pkt = 0;
   //m_highEnergyMode = false;
@@ -58,24 +58,24 @@ UanMacWakeup::UanMacWakeup ()
   m_useWakeup = true;
 }
 
-UanMacWakeup::~UanMacWakeup ()
+UanMacWakeupMaca::~UanMacWakeupMaca ()
 {
 }
 
 void
-UanMacWakeup::SetToneMode ()
+UanMacWakeupMaca::SetToneMode ()
 {
   m_toneMode = true;
 }
 
 /*void
-UanMacWakeup::SetHighEnergyMode ()
+UanMacWakeupMaca::SetHighEnergyMode ()
 {
   m_highEnergyMode = true;
 }*/
 
 void
-UanMacWakeup::Clear ()
+UanMacWakeupMaca::Clear ()
 {
   if (m_cleared)
     {
@@ -90,7 +90,7 @@ UanMacWakeup::Clear ()
 }
 
 void
-UanMacWakeup::DoDispose ()
+UanMacWakeupMaca::DoDispose ()
 {
   Clear ();
   m_timerEndTx.Cancel ();
@@ -101,34 +101,34 @@ UanMacWakeup::DoDispose ()
 }
 
 TypeId
-UanMacWakeup::GetTypeId (void)
+UanMacWakeupMaca::GetTypeId (void)
 {
-  static TypeId tid = TypeId ("ns3::UanMacWakeup")
+  static TypeId tid = TypeId ("ns3::UanMacWakeupMaca")
     .SetParent<UanMac> ()
     .SetGroupName ("Uan")
-    .AddConstructor<UanMacWakeup> ()
+    .AddConstructor<UanMacWakeupMaca> ()
   ;
   return tid;
 }
 
 Address
-UanMacWakeup::GetAddress (void)
+UanMacWakeupMaca::GetAddress (void)
 {
   return m_address;
 }
 
 void
-UanMacWakeup::SetAddress (UanAddress addr)
+UanMacWakeupMaca::SetAddress (UanAddress addr)
 {
   m_address=addr;
 }
 
 bool
-UanMacWakeup::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protocolNumber)
+UanMacWakeupMaca::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protocolNumber)
 {
   if (m_pkt != 0)
     {
-      NS_LOG_DEBUG ("UanMacWakeup not IDLE, discarding");
+      NS_LOG_DEBUG ("UanMacWakeupMaca not IDLE, discarding");
       return false;
     }
 
@@ -161,16 +161,26 @@ UanMacWakeup::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protoco
   NS_LOG_DEBUG ((uint32_t) UanAddress::ConvertFrom (GetAddress ()).GetAsInt ()
       << " sending wakeup signal to " << (uint32_t) m_dest.GetAsInt ());
 
-  //Send wakeup signal
-  //if (m_highEnergyMode) SendBroadcastWU ();
-  if (m_toneMode) SendBroadcastWU();
-  else SendWU (m_dest);
+	  
+  UanHeaderCommon header;
+  m_pkt->PeekHeader(header);
+
+  if (header.GetType() == UanMacMaca::RTS){
+    SendBroadcastCTD(m_dest);
+  }
+  if (header.GetType() == UanMacMaca::CTS){
+    SendBroadcastCTS(m_dest);
+  }
+  else{
+	m_pkt = packet;
+	Send();
+  }
 
   return true;
-}
+  }
 
 uint32_t
-UanMacWakeup::GetHeadersSize () const
+UanMacWakeupMaca::GetHeadersSize () const
 {
   uint32_t size = 0;
 
@@ -193,7 +203,7 @@ UanMacWakeup::GetHeadersSize () const
 
 
 bool
-UanMacWakeup::Send ()
+UanMacWakeupMaca::Send ()
 {
   NS_LOG_DEBUG ((uint32_t) UanAddress::ConvertFrom (GetAddress ()).GetAsInt ()
       << " sending packet to " << (uint32_t) m_dest.GetAsInt ());
@@ -206,7 +216,7 @@ UanMacWakeup::Send ()
 }
 
 void
-UanMacWakeup::SendWU (UanAddress dst)
+UanMacWakeupMaca::SendWU (UanAddress dst)
 {
   Ptr<Packet> pkt = Create<Packet> ();
 
@@ -225,12 +235,12 @@ UanMacWakeup::SendWU (UanAddress dst)
   //m_phy->SendPacket (pkt, 0);
 }
 
+
 bool
-UanMacWakeup::SendWUAlone (UanAddress dst)
-{
+UanMacWakeupMaca::SendBroadcastCTD(UanAddress dest){
   if (m_pkt != 0)
     {
-      NS_LOG_DEBUG ("UanMacWakeup not IDLE, discarding");
+      NS_LOG_DEBUG ("UanMacWakeupMaca not IDLE, discarding");
       return false;
     }
 
@@ -240,20 +250,63 @@ UanMacWakeup::SendWUAlone (UanAddress dst)
       return false;
     }
 
-  m_wuAlone = true;
-  SendWU(dst);
+  //m_wuAlone = true;
+  
+  
+  Ptr<Packet> pkt = Create<Packet> ();
+
+  UanHeaderWakeup wakeup;
+  wakeup.SetDest (dest);
+  pkt->AddHeader (wakeup);
+  UanPhyWUHeader phyHeader;
+  pkt->AddHeader (phyHeader);
+
+  UanWakeupTag uwt;
+  uwt.m_type = UanWakeupTag::CTD;
+  pkt->AddPacketTag (uwt);
+
+  m_state = WU;
+  m_wakeupPhy->SendPacket (pkt, 0);
 
   return true;
 }
 
-void
-UanMacWakeup::SendBroadcastWU ()
+bool
+UanMacWakeupMaca::SendBroadcastCTS(UanAddress dest)
 {
-  SendWU (UanAddress::ConvertFrom (GetBroadcast()).GetAsInt());
+  if (m_pkt != 0)
+    {
+      NS_LOG_DEBUG ("UanMacWakeupMaca not IDLE, discarding");
+      return false;
+    }
+
+  if (!m_phy->IsStateIdle () && !m_wakeupPhy->IsStateIdle ())
+    {
+      NS_LOG_DEBUG ("Phy not IDLE, discarding");
+      return false;
+    }
+
+  //m_wuAlone = true;
+  Ptr<Packet> pkt = Create<Packet> ();
+
+  UanHeaderWakeup wakeup;
+  wakeup.SetDest (dest);
+  pkt->AddHeader (wakeup);
+  UanPhyWUHeader phyHeader;
+  pkt->AddHeader (phyHeader);
+
+  UanWakeupTag uwt;
+  uwt.m_type = UanWakeupTag::CTS;
+  pkt->AddPacketTag (uwt);
+
+  m_state = WU;
+  m_wakeupPhy->SendPacket (pkt, 0);
+
+  return true;
 }
 
 /*void
-UanMacWakeup::SendWUHE ()
+UanMacWakeupMaca::SendWUHE ()
 {
   Ptr<Packet> pkt = Create<Packet> ();
 
@@ -271,48 +324,48 @@ UanMacWakeup::SendWUHE ()
 }*/
 
 void
-UanMacWakeup::SetForwardUpCb (Callback<void, Ptr<Packet>, const UanAddress& > cb)
+UanMacWakeupMaca::SetForwardUpCb (Callback<void, Ptr<Packet>, const UanAddress& > cb)
 {
   m_forUpCb = cb;
 }
 void
-UanMacWakeup::SetTxEndCallback (TxEndCallback cb)
+UanMacWakeupMaca::SetTxEndCallback (TxEndCallback cb)
 {
   m_txEnd = cb;
 }
 void
-UanMacWakeup::SetToneRxCallback (ToneRxCallback cb)
+UanMacWakeupMaca::SetToneRxCallback (ToneRxCallback cb)
 {
   m_toneRxCallback = cb;
 }
-void UanMacWakeup::SetSendPhyStateChangeCb (Callback<void, PhyState> cb)
+void UanMacWakeupMaca::SetSendPhyStateChangeCb (Callback<void, PhyState> cb)
 {
   m_stateChangeCb = cb;
 }
 
 void
-UanMacWakeup::AttachPhy (Ptr<UanPhy> phy)
+UanMacWakeupMaca::AttachPhy (Ptr<UanPhy> phy)
 {
   m_phy = DynamicCast<UanPhyGen> (phy);
-  m_phy->SetReceiveOkCallback (MakeCallback (&UanMacWakeup::RxPacketGood, this));
-  m_phy->SetReceiveErrorCallback (MakeCallback (&UanMacWakeup::RxPacketError, this));
+  m_phy->SetReceiveOkCallback (MakeCallback (&UanMacWakeupMaca::RxPacketGood, this));
+  m_phy->SetReceiveErrorCallback (MakeCallback (&UanMacWakeupMaca::RxPacketError, this));
 }
 void
-UanMacWakeup::AttachWakeupPhy (Ptr<UanPhy> phy)
+UanMacWakeupMaca::AttachWakeupPhy (Ptr<UanPhy> phy)
 {
   m_wakeupPhy = phy;
-  m_wakeupPhy->SetReceiveOkCallback (MakeCallback (&UanMacWakeup::RxPacketGoodW, this));
-  m_wakeupPhy->SetReceiveErrorCallback (MakeCallback (&UanMacWakeup::RxPacketErrorW, this));
+  m_wakeupPhy->SetReceiveOkCallback (MakeCallback (&UanMacWakeupMaca::RxPacketGoodW, this));
+  m_wakeupPhy->SetReceiveErrorCallback (MakeCallback (&UanMacWakeupMaca::RxPacketErrorW, this));
 }
 /*void
-UanMacWakeup::AttachWakeupHEPhy (Ptr<UanPhy> phy)
+UanMacWakeupMaca::AttachWakeupHEPhy (Ptr<UanPhy> phy)
 {
   m_wakeupPhyHE = phy;
-  m_wakeupPhyHE->SetReceiveOkCallback (MakeCallback (&UanMacWakeup::RxPacketGoodWHE, this));
-  m_wakeupPhyHE->SetReceiveErrorCallback (MakeCallback (&UanMacWakeup::RxPacketErrorWHE, this));
+  m_wakeupPhyHE->SetReceiveOkCallback (MakeCallback (&UanMacWakeupMaca::RxPacketGoodWHE, this));
+  m_wakeupPhyHE->SetReceiveErrorCallback (MakeCallback (&UanMacWakeupMaca::RxPacketErrorWHE, this));
 }*/
 void
-UanMacWakeup::RxPacketGood (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
+UanMacWakeupMaca::RxPacketGood (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
 {
   UanWakeupTag uwt;
   NS_ASSERT (pkt->RemovePacketTag(uwt));
@@ -333,11 +386,11 @@ UanMacWakeup::RxPacketGood (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
 
   m_forUpCb (pkt, header.GetSrc ());
 
-  //if(m_useWakeup) m_phy->SetSleepMode(true);
+  m_phy->SetSleepMode(false);
   //std::cerr << Simulator::Now().GetSeconds() << " Phy Data sleep " << (uint32_t) m_address.GetAsInt() <<  std::endl;
 }
 /*void
-UanMacWakeup::RxPacketGoodData (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
+UanMacWakeupMaca::RxPacketGoodData (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
 {
   UanPhyHeader phyHeader;
   NS_ASSERT (pkt->RemoveHeader (phyHeader));
@@ -357,13 +410,12 @@ UanMacWakeup::RxPacketGoodData (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
   //std::cerr << Simulator::Now().GetSeconds() << " Phy Data sleep" << (uint32_t) m_address.GetAsInt() << std::endl;
 }*/
 void
-UanMacWakeup::RxPacketGoodW (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
+UanMacWakeupMaca::RxPacketGoodW (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
 {
   UanWakeupTag uwt;
   NS_ASSERT (pkt->RemovePacketTag(uwt));
 
-  if(uwt.m_type != UanWakeupTag::WU)
-    return;
+  if(uwt.m_type == UanWakeupTag::CTD){
 
   UanPhyWUHeader phyWUHeader;
   pkt->RemoveHeader (phyWUHeader);
@@ -375,13 +427,31 @@ UanMacWakeup::RxPacketGoodW (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
 
   UanAddress dest = header.GetDest();
 
-  if (dest != GetAddress () && dest != UanAddress::GetBroadcast())
-      return;
-
+  if (dest == GetAddress () || dest == UanAddress::GetBroadcast())
+       m_phy->SetSleepMode(false);
+  
+  m_rxRTSCb(pkt,dest);
+	  
+ 
   m_timerTxFail.Schedule (MilliSeconds (2));
-  if (!m_toneRxCallback.IsNull())
-    m_toneRxCallback ();
 
+  }
+  else if(uwt.m_type == UanWakeupTag::CTS){
+  
+    UanPhyWUHeader phyWUHeader;
+    pkt->RemoveHeader (phyWUHeader);
+ 
+    UanHeaderWakeup header;
+    pkt->RemoveHeader (header);
+    NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () << " Wakeup " << (uint32_t) UanAddress::ConvertFrom (GetAddress ()).GetAsInt ()
+      << " receiving wakeup packet for " << header.GetDest ());
+
+    UanAddress dest = header.GetDest();
+    m_phy->SetSleepMode(false);
+    //if (dest == GetAddress () || dest == UanAddress::GetBroadcast())
+      // m_phy->SetSleepMode(false);
+	m_rxCTSCb(pkt,dest);
+	}
   /*if (m_highEnergyMode)
     {
       m_wakeupPhyHE->SetSleepMode (false);
@@ -392,11 +462,12 @@ UanMacWakeup::RxPacketGoodW (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
       if(m_useWakeup) m_phy->SetSleepMode (false);
       //std::cerr << Simulator::Now().GetSeconds() << " Phy Data wakeup" << (uint32_t) m_address.GetAsInt() << std::endl;
     }*/
-	if(m_useWakeup) m_phy->SetSleepMode (false);
+
+
 }
 
 /*void
-UanMacWakeup::RxPacketGoodWHE (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
+UanMacWakeupMaca::RxPacketGoodWHE (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
 {
   UanWakeupTag uwt;
   NS_ASSERT (pkt->RemovePacketTag(uwt));
@@ -426,7 +497,7 @@ UanMacWakeup::RxPacketGoodWHE (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
 }*/
 
 void
-UanMacWakeup::RxPacketError (Ptr<Packet> pkt, double sinr)
+UanMacWakeupMaca::RxPacketError (Ptr<Packet> pkt, double sinr)
 {
   NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Received packet in error with sinr " << sinr);
   if (!m_timerEndTx.IsRunning())
@@ -437,12 +508,12 @@ UanMacWakeup::RxPacketError (Ptr<Packet> pkt, double sinr)
 }
 
 void
-UanMacWakeup::RxPacketErrorW (Ptr<Packet> pkt, double sinr)
+UanMacWakeupMaca::RxPacketErrorW (Ptr<Packet> pkt, double sinr)
 {
   NS_LOG_DEBUG ("" << Simulator::Now () << " Wakeup MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Received packet in error with sinr " << sinr);
 }
 /*void
-UanMacWakeup::RxPacketErrorWHE (Ptr<Packet> pkt, double sinr)
+UanMacWakeupMaca::RxPacketErrorWHE (Ptr<Packet> pkt, double sinr)
 {
   NS_LOG_DEBUG ("" << Simulator::Now () << " WakeupHE MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Received packet in error with sinr " << sinr);
   if (!m_timerEndTx.IsRunning())
@@ -454,32 +525,42 @@ UanMacWakeup::RxPacketErrorWHE (Ptr<Packet> pkt, double sinr)
 }*/
 
 void 
-UanMacWakeup::SetSleepMode(bool isSleep)
+UanMacWakeupMaca::SetSleepMode(bool isSleep)
 {
   m_phy->SetSleepMode (isSleep);
   
   //m_wakeupPhyHE->SetSleepMode (isSleep);
 }
-void UanMacWakeup::SetUseWakeup(bool useWakeup){
+void 
+UanMacWakeupMaca::SetUseWakeup(bool useWakeup){
   m_useWakeup = useWakeup;
 }
+void 
+UanMacWakeupMaca::SetRxRTSCb(Callback<void,Ptr<Packet>,const UanAddress& > cb ){
+  m_rxRTSCb = cb;
+}
+
+void
+UanMacWakeupMaca::SetRxCTSCb(Callback<void,Ptr<Packet>,const UanAddress& > cb ){
+  m_rxCTSCb = cb;
+}
+
 
 Address
-UanMacWakeup::GetBroadcast (void) const
+UanMacWakeupMaca::GetBroadcast (void) const
 {
   UanAddress broadcast (255);
   return broadcast;
 }
 
 void
-UanMacWakeup::On_timerEndTx (void)
+UanMacWakeupMaca::On_timerEndTx (void)
 {
   if (m_wuAlone)
     {
       m_wuAlone = false;
       return;
     }
-
   switch (m_state)
   {
   case WU:
@@ -503,21 +584,23 @@ UanMacWakeup::On_timerEndTx (void)
 
 
 }
+
+
 /*
 void
-UanMacWakeup::On_timerDelayTxWUHE (void)
+UanMacWakeupMaca::On_timerDelayTxWUHE (void)
 {
   SendWUHE();
 }
 */
 void
-UanMacWakeup::On_timerDelayTx (void)
+UanMacWakeupMaca::On_timerDelayTx (void)
 {
   Send ();
 }
 
 void
-UanMacWakeup::On_timerTxFail ()
+UanMacWakeupMaca::On_timerTxFail ()
 {
   /*if (m_highEnergyMode)
     {
@@ -535,7 +618,7 @@ UanMacWakeup::On_timerTxFail ()
  * PhyListener
  */
 void
-UanMacWakeup::NotifyRxStart (void)
+UanMacWakeupMaca::NotifyRxStart (void)
 {
   m_timerTxFail.Cancel ();
 
@@ -544,7 +627,7 @@ UanMacWakeup::NotifyRxStart (void)
 }
 
 void
-UanMacWakeup::NotifyRxEndOk (void)
+UanMacWakeupMaca::NotifyRxEndOk (void)
 {
   if (!m_stateChangeCb.IsNull())
 
@@ -552,18 +635,18 @@ UanMacWakeup::NotifyRxEndOk (void)
 }
 
 void
-UanMacWakeup::NotifyRxEndError (void)
+UanMacWakeupMaca::NotifyRxEndError (void)
 {
   if (!m_stateChangeCb.IsNull())
     m_stateChangeCb(IDLE);
 
-  //if(m_useWakeup) m_phy->SetSleepMode (true);
+  if(m_useWakeup) m_phy->SetSleepMode (true);
   //if (m_wakeupPhyHE != NULL)
   //  m_wakeupPhyHE->SetSleepMode (true);
 }
 
 void
-UanMacWakeup::NotifyCcaStart (void)
+UanMacWakeupMaca::NotifyCcaStart (void)
 {
   if (!m_stateChangeCb.IsNull())
 
@@ -571,7 +654,7 @@ UanMacWakeup::NotifyCcaStart (void)
 }
 
 void
-UanMacWakeup::NotifyCcaEnd (void)
+UanMacWakeupMaca::NotifyCcaEnd (void)
 {
   if (!m_stateChangeCb.IsNull())
 
@@ -579,7 +662,7 @@ UanMacWakeup::NotifyCcaEnd (void)
 }
 
 void
-UanMacWakeup::NotifyTxStart (Time duration)
+UanMacWakeupMaca::NotifyTxStart (Time duration)
 {
   NS_ASSERT (m_timerEndTx.IsRunning() == false);
   if (!m_stateChangeCb.IsNull())
@@ -589,7 +672,7 @@ UanMacWakeup::NotifyTxStart (Time duration)
 }
 
 int64_t
-UanMacWakeup::AssignStreams (int64_t stream)
+UanMacWakeupMaca::AssignStreams (int64_t stream)
 {
   NS_LOG_FUNCTION (this << stream);
   m_rand->SetStream (stream);

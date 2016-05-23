@@ -18,8 +18,8 @@
  * Author: Salvador Climent <jocliba@upvnet.upv.es>
  */
 
-#ifndef UAN_MAC_WAKEUP_H_
-#define UAN_MAC_WAKEUP_H_
+#ifndef UAN_MAC_WAKEUP_MACA_H_
+#define UAN_MAC_WAKEUP_MACA_H_
 
 #include "uan-mac.h"
 #include "uan-address.h"
@@ -38,7 +38,7 @@ namespace ns3
 class UanPhy;
 class UanTxMode;
 
-class UanMacWakeup : public UanMac, public UanPhyListener
+class UanMacWakeupMaca : public UanMac, public UanPhyListener
 {
 public:
   enum PhyState { BUSY, IDLE };
@@ -46,8 +46,8 @@ public:
   typedef Callback<void> TxEndCallback;
   typedef Callback<void> ToneRxCallback;
 
-  UanMacWakeup ();
-  virtual ~UanMacWakeup ();
+  UanMacWakeupMaca ();
+  virtual ~UanMacWakeupMaca ();
   static TypeId GetTypeId (void);
 
 
@@ -66,14 +66,19 @@ public:
 
   bool Send ();
   void SendWU (UanAddress dst);
-  bool SendWUAlone (UanAddress dst);
+  bool SendBroadcastCTS(UanAddress dest);
+  bool SendBroadcastCTD(UanAddress dest);
+  
   //void SendWUHE ();
-  void SendBroadcastWU ();
+  //void SendBroadcastWU ();
 
   //void SetHighEnergyMode ();
   void SetToneMode ();
 
   void SetSendPhyStateChangeCb (Callback<void, PhyState> cb);
+  void SetRxRTSCb(Callback<void,Ptr<Packet>,const UanAddress& > cb );
+  void SetRxCTSCb(Callback<void,Ptr<Packet>,const UanAddress& > cb );
+  
   
   void SetSleepMode(bool isSleep);
   void SetUseWakeup(bool useWakeup);
@@ -144,7 +149,8 @@ private:
 
   TxEndCallback m_txEnd;
   ToneRxCallback m_toneRxCallback;
-
+  Callback<void,Ptr<Packet>,const UanAddress&> m_rxRTSCb;
+  Callback<void,Ptr<Packet>,const UanAddress&> m_rxCTSCb;
   void On_timerEndTx (void);
   void On_timerDelayTx (void);
   //void On_timerDelayTxWUHE (void);
@@ -180,4 +186,4 @@ protected:
 }
 
 
-#endif /* UAN_MAC_WAKEUP_H_ */
+#endif /* UAN_MAC_WAKEUP_MACA_H_ */

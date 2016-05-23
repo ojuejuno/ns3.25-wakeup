@@ -44,6 +44,10 @@ UanMacCwW::UanMacCwW ()
 
 {
   m_rv = CreateObject<UniformRandomVariable> ();
+  m_wakeupState = UanMacWakeup::IDLE;
+  m_cw = 125;
+  m_slotTime = MilliSeconds (50);  
+  m_useWakeup = true ;
 }
 
 UanMacCwW::~UanMacCwW ()
@@ -84,12 +88,12 @@ UanMacCwW::GetTypeId (void)
     .AddConstructor<UanMacCwW> ()
     .AddAttribute ("CW",
                    "The MAC parameter CW.",
-                   UintegerValue (10),
+                   UintegerValue (125),
                    MakeUintegerAccessor (&UanMacCwW::m_cw),
                    MakeUintegerChecker<uint32_t> ())
     .AddAttribute ("SlotTime",
                    "Time slot duration for MAC backoff.",
-                   TimeValue (MilliSeconds (20)),
+                   TimeValue (MilliSeconds (50)),
                    MakeTimeAccessor (&UanMacCwW::m_slotTime),
                    MakeTimeChecker ())
     .AddTraceSource ("Enqueue",
@@ -128,7 +132,7 @@ UanMacCwW::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protocolNu
   switch (m_state)
     {
     case CCABUSY:
-      NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " MAC " << GetAddress () << " Starting enqueue CCABUSY");
+      NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " MAC " <<  UanAddress::ConvertFrom (GetAddress ()) << " Starting enqueue CCABUSY");
       if (m_txEndEvent.IsRunning ())
         {
           NS_LOG_DEBUG ("State is TX");
@@ -138,15 +142,15 @@ UanMacCwW::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protocolNu
           NS_LOG_DEBUG ("State is not TX");
         }
 
-      NS_ASSERT (m_phy->GetTransducer ()->GetArrivalList ().size () >= 1 || m_phy->IsStateTx ());
+      //NS_ASSERT (m_phy->GetTransducer ()->GetArrivalList ().size () >= 1 || m_phy->IsStateTx ());
       return false;
     case RUNNING:
-      NS_LOG_DEBUG ("MAC " << GetAddress () << " Starting enqueue RUNNING");
-      NS_ASSERT (m_phy->GetTransducer ()->GetArrivalList ().size () == 0 && !m_phy->IsStateTx ());
+      NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " MAC " <<  UanAddress::ConvertFrom (GetAddress ()) << " Starting enqueue RUNNING");
+      //NS_ASSERT (m_phy->GetTransducer ()->GetArrivalList ().size () == 0 && !m_phy->IsStateTx ());
       return false;
     case TX:
-	  NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () <<"MAC " << GetAddress () << " Starting enqueue TX");
-	  return false;
+	  //NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () <<"MAC " <<  UanAddress::ConvertFrom (GetAddress ()) << " Starting enqueue TX");
+	  //return false;
     case IDLE:
       {
         NS_ASSERT (!m_pktTx);
@@ -159,8 +163,9 @@ UanMacCwW::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protocolNu
         packet->AddHeader (header);
 
         m_enqueueLogger (packet, protocolNumber);
+		DynamicCast<UanMacWakeup> (m_mac)->SetSleepMode (false);
 
-        if (m_phy->IsStateBusy ())
+       if(m_wakeupState == UanMacWakeup::BUSY || m_state == TX)//if (m_phy->IsStateBusy ())
           {
             m_pktTx = packet;
             m_dest = dest;
@@ -169,16 +174,17 @@ UanMacCwW::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protocolNu
             uint32_t cw = (uint32_t) m_rv->GetValue (0,m_cw);
             m_savedDelayS = Seconds ((double)(cw) * m_slotTime.GetSeconds ());
             m_sendTime = Simulator::Now () + m_savedDelayS;
-            NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << ": Addr " << GetAddress () << ": Enqueuing new packet while busy:  (Chose CW " << cw << ", Sending at " << m_sendTime.GetSeconds () << " Packet size: " << packet->GetSize ());
-            NS_ASSERT (m_phy->GetTransducer ()->GetArrivalList ().size () >= 1 || m_phy->IsStateTx ());
+            NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << ": Addr " <<  UanAddress::ConvertFrom (GetAddress ()) << ": Enqueuing new packet while busy:  (Chose CW " << cw << ", Sending at " << m_sendTime.GetSeconds () << " Packet size: " << packet->GetSize ());
+            //NS_ASSERT (m_phy->GetTransducer ()->GetArrivalList ().size () >= 1 || m_phy->IsStateTx ());
           }
         else
           {
             
-            NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << ": Addr " << GetAddress () << ": Enqueuing new packet while idle (sending)");
+            NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << ": Addr " <<  UanAddress::ConvertFrom (GetAddress ()) << ": Enqueuing new packet while idle (sending)");
             NS_ASSERT (m_state != TX);
-			NS_ASSERT (m_phy->GetTransducer ()->GetArrivalList ().size () == 0 && !m_phy->IsStateTx ());
+			//NS_ASSERT (m_phy->GetTransducer ()->GetArrivalList ().size () == 0 && !m_phy->IsStateTx ());
             m_state = TX;
+			m_wakeupState = UanMacWakeup::BUSY;
 			//UanWakeupTag uwt;
 			//uwt.m_type = UanWakeupTag::DATA;
             //m_pktTx->AddPacketTag (uwt);
@@ -227,7 +233,9 @@ UanMacCwW::AttachMacWakeup (Ptr<UanMacWakeup> mac)
 {
   m_mac = mac;
   m_mac->SetForwardUpCb (MakeCallback (&UanMacCwW::PhyRxPacketGood, this));
+  DynamicCast<UanMacWakeup> (m_mac)-> SetUseWakeup(m_useWakeup);
 }
+
 
 
 
@@ -239,6 +247,7 @@ UanMacCwW::GetBroadcast (void) const
 
 
 
+
 void
 UanMacCwW::PhyStateCb (UanMacWakeup::PhyState phyState)
 {
@@ -247,26 +256,32 @@ UanMacCwW::PhyStateCb (UanMacWakeup::PhyState phyState)
   switch (m_wakeupState)
   {
   case UanMacWakeup::IDLE:
-      if (m_state == CCABUSY&& !m_phy->IsStateCcaBusy ())
+      if (m_state == CCABUSY)
     {
-      NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " << GetAddress () << ": Switching to channel idle");
+      NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " <<  UanAddress::ConvertFrom (GetAddress ()) << ": Switching to channel idle");
       m_state = RUNNING;
       StartTimer ();
-
+      DynamicCast<UanMacWakeup> (m_mac)->SetSleepMode (false);
     }
 
     break;
   case UanMacWakeup::BUSY:
     if (m_state == RUNNING)
     {
-      NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " << GetAddress () << ": Switching to channel busy");
+      NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " <<  UanAddress::ConvertFrom (GetAddress ()) << ": Switching to channel busy");
       m_state = CCABUSY;
       SaveTimer ();
-
+      DynamicCast<UanMacWakeup> (m_mac)->SetSleepMode (false);
     }
     break;
   }
 }
+
+
+
+
+
+
 
 
 
@@ -290,15 +305,17 @@ UanMacCwW::EndTx (void)
   if (m_state == TX)
     {
       m_state = IDLE;
-	  NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () <<" ENd TX to IDLE");
+	  NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " <<  UanAddress::ConvertFrom (GetAddress ()) <<" ENd TX to IDLE");
+	  if(m_useWakeup) DynamicCast<UanMacWakeup> (m_mac)->SetSleepMode(true);
     }
   else if (m_state == CCABUSY)
     {
       if (m_phy->IsStateIdle ())
         {
-          NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " << GetAddress () << ": Switching to channel idle (After TX!)");
+          NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " <<  UanAddress::ConvertFrom (GetAddress ()) << ": Switching to channel idle (After TX!)");
           m_state = RUNNING;
           StartTimer ();
+		  DynamicCast<UanMacWakeup> (m_mac)->SetSleepMode (false);
         }
     }
   else
@@ -334,7 +351,9 @@ UanMacCwW::PhyRxPacketGood (Ptr<Packet> packet, const UanAddress& add)
 
   if (header.GetDest () == m_address || header.GetDest () == UanAddress::GetBroadcast ())
     {
-      m_forwardUpCb (packet, header.GetSrc ());
+      NS_LOG_DEBUG ("RX DATA from " <<UanAddress::ConvertFrom (header.GetSrc()) <<" ******************************************************** ");
+	  m_forwardUpCb (packet, header.GetSrc ());
+	  DynamicCast<UanMacWakeup> (m_mac)->SetSleepMode (true);
     }
 }
 void
@@ -345,11 +364,12 @@ UanMacCwW::PhyRxPacketError (Ptr<Packet> packet, double sinr)
 void
 UanMacCwW::SaveTimer (void)
 {
-  NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " << GetAddress () << " Saving timer (Delay = " << (m_savedDelayS = m_sendTime - Simulator::Now ()).GetSeconds () << ")");
+  NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " << UanAddress::ConvertFrom (GetAddress ())  << " Saving timer (Delay = " << (m_savedDelayS = m_sendTime - Simulator::Now ()).GetSeconds () << ")");
   NS_ASSERT (m_pktTx);
   NS_ASSERT (m_sendTime >= Simulator::Now ());
   m_savedDelayS = m_sendTime - Simulator::Now ();
   Simulator::Cancel (m_sendEvent);
+  
 
 
 }
@@ -365,14 +385,14 @@ UanMacCwW::StartTimer (void)
   else
     {
       m_sendEvent = Simulator::Schedule (m_savedDelayS, &UanMacCwW::SendPacket, this);
-      NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " << GetAddress () << " Starting timer (New send time = " << this->m_sendTime.GetSeconds () << ")");
+      NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " << UanAddress::ConvertFrom (GetAddress ())  << " Starting timer (New send time = " << this->m_sendTime.GetSeconds () << ")");
     }
 }
 
 void
 UanMacCwW::SendPacket (void)
 {
-  NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " << GetAddress () << " Transmitting ");
+  NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " Addr " << UanAddress::ConvertFrom (GetAddress ())  << " Transmitting ");
   NS_ASSERT (m_state == RUNNING);
   m_state = TX;
 

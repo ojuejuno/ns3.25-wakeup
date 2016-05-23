@@ -136,7 +136,7 @@ private:
 class UanWakeupTag : public Tag
 {
 public:
-  enum Type {WU, WUHE, DATA};
+  enum Type {WU,WUHE, DATA, CTD, CTS};
   Type m_type;
 
   static TypeId GetTypeId (void);

@@ -38,6 +38,7 @@
 
 
 
+
 namespace ns3
 {
 NS_LOG_COMPONENT_DEFINE ("UanMacFamaNW");
@@ -47,28 +48,32 @@ UanMacFamaNW::UanMacFamaNW ()
   : UanMac (),
     m_cleared (false),
     m_maxBackoff (0.5),
-    m_maxPropTime (0.3),
-    m_maxPacketSize (64)
+    m_maxPropTime (0.47),
+    m_maxPacketSize (26)
 {
-  m_timerBackoff.SetFunction (&UanMacFamaNW::On_timerBackoff, this);
+  m_timerCONTEND.SetFunction (&UanMacFamaNW::On_timerCONTEND, this);
   m_timerWaitToBackoff.SetFunction (&UanMacFamaNW::On_timerWaitToBackoff, this);
-
+  m_timerWfCTS.SetFunction (&UanMacFamaNW::On_timerWfCTS, this);
+  m_timerWfDATA.SetFunction (&UanMacFamaNW::On_timerWfDATA, this);
+  m_timerBackoff.SetFunction (&UanMacFamaNW::On_timerBackoff, this);
+  m_timerWfACK.SetFunction (&UanMacFamaNW::On_timerWfACK, this);
+  
   m_rtsSize = 0;
-  m_useAck = false;
+  m_useAck = true;
   m_sendingData = false;
 
-  m_maxBulkSend = 0;
+  m_maxBulkSend = 1;
   m_bulkSend = 0;
   m_state = UanMacWakeup::IDLE;
   m_rand= CreateObject<UniformRandomVariable>();
   
   m_phy=0;
+  m_macState = IDLE;
 }
 
 UanMacFamaNW::~UanMacFamaNW ()
 {
-  m_timerBackoff.Cancel ();
-  m_timerWaitToBackoff.Cancel ();
+  StopTimer();
 }
 
 void
@@ -79,7 +84,7 @@ UanMacFamaNW::Clear ()
       return;
     }
   m_cleared = true;
-  m_timerBackoff.Cancel ();
+  StopTimer();
   if (m_phy)
     {
       m_phy->Clear ();
@@ -99,7 +104,7 @@ TypeId
 UanMacFamaNW::GetTypeId (void)
 {
   static TypeId tid = TypeId ("ns3::UanMacFamaNW")
-    .SetParent<Object> ()
+    .SetParent<UanMac> ()
 	.SetGroupName ("Uan")
     .AddConstructor<UanMacFamaNW> ()
   ;
@@ -160,7 +165,7 @@ UanMacFamaNW::SetBulkSend (uint8_t bulkSend)
 bool
 UanMacFamaNW::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protocolNumber)
 {
-  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Queueing packet for " << UanAddress::ConvertFrom (dest));
+ 
 
   UanAddress src = UanAddress::ConvertFrom (GetAddress ());
   UanAddress udest = UanAddress::ConvertFrom (dest);
@@ -171,14 +176,19 @@ UanMacFamaNW::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protoco
   header.SetType (DATA);
 
   packet->AddHeader (header);
-
-  m_sendQueue.push(packet);
+  
+ if(m_sendQueue.size() < 10){
+    m_sendQueue.push(packet);
+    NS_LOG_DEBUG(" " << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" packet queueing increase to "<<m_sendQueue.size());
+  }
   if (m_sendQueue.size () >= 1
       && !m_timerWaitToBackoff.IsRunning()
-      && !m_timerBackoff.IsRunning ()
-      && m_state == UanMacWakeup::IDLE)
+      && !m_timerCONTEND.IsRunning ()
+      && m_state == UanMacWakeup::IDLE
+	  && m_macState == IDLE)
     {
-      uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
+      m_macState = CONTEND;
+	  uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
       UanHeaderCommon header;
       header.SetSrc (src);
       header.SetDest (udest);
@@ -193,6 +203,7 @@ UanMacFamaNW::Enqueue (Ptr<Packet> packet, const Address &dest, uint16_t protoco
       packetRts->AddHeader (header);
 
       m_timerWaitToBackoff.Schedule (Seconds(m_maxPropTime * 2 + (size + packetRts->GetSize ()) * 8 / dataRate));
+	  
     }
 
   return true;
@@ -208,7 +219,7 @@ UanMacFamaNW::SendRTS ()
 
   m_bulkSend = m_maxBulkSend;
 
-  //uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
+  uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
 
   UanHeaderCommon dataHeader;
   Ptr<Packet> pkt = m_sendQueue.front ();
@@ -232,15 +243,24 @@ UanMacFamaNW::SendRTS ()
 
   //m_timerWaitToBackoff.Schedule (Seconds(m_maxPropTime * 2 + (size + packet->GetSize ()) * 8 / dataRate));
 
-
-  return Send (packet);
+  bool success = Send(packet);
+  if(success){
+    m_macState = WFCTS;
+	/*uint32_t size = 10;// DynamicCast<UanMacWakeup> (m_mac)->GetHeadersSize ();
+    if (m_rtsSize > size)
+      size = m_rtsSize - size;
+    Ptr<Packet> packetRts = Create<Packet> (size);
+    packetRts->AddHeader (header);*/
+	m_timerWfCTS.Schedule(Seconds(m_maxPropTime * 2 + (size + packet->GetSize ()) * 8 / dataRate));
+  }
+  return success;
 }
 
 bool
 UanMacFamaNW::SendCTS (const Address &dest, const double duration)
 {
-  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Send CTS");
-  //uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
+  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Send CTS to" << UanAddress::ConvertFrom (dest));
+  uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
 
   UanAddress src = UanAddress::ConvertFrom (GetAddress ());
   UanAddress udest = UanAddress::ConvertFrom (dest);
@@ -250,17 +270,21 @@ UanMacFamaNW::SendCTS (const Address &dest, const double duration)
   header.SetDest (udest);
   header.SetType (CTS);
 
-  // CTS size
   uint32_t size = 10;// DynamicCast<UanMacWakeup> (m_mac)->GetHeadersSize ();
   if (m_rtsSize > size)
-    size = m_rtsSize - size;
+  size = m_rtsSize - size;
 
-  Ptr<Packet> packet = Create<Packet> (size);
+  Ptr<Packet> packet = Create<Packet> (m_maxPacketSize);
   packet->AddHeader (header);
 
   //m_timerWaitToBackoff.Schedule (Seconds(m_maxPropTime * 2 + (size + packet->GetSize ()) * 8 / dataRate));
 
-  return Send (packet);
+  bool success = Send(packet);
+  if(success) {
+  m_macState = WFDATA;
+  m_timerWfDATA.Schedule(Seconds(m_maxPropTime * 2 + (size + packet->GetSize ()) * 8 / dataRate));
+  }
+  return success;
 }
 
 /*bool
@@ -300,24 +324,22 @@ UanMacFamaNW::PhyStateCb (UanMacWakeup::PhyState phyState)
   switch (phyState)
   {
   case UanMacWakeup::IDLE:
-    if (!m_sendingData)
+    if (m_macState == IDLE)
       {
         m_timerWaitToBackoff.Cancel ();
-        m_timerBackoff.Cancel ();
+        m_timerCONTEND.Cancel ();
 
         if (m_sendQueue.size () >= 1)
           {
-            // Size
-            uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
-            uint32_t size = 10;// DynamicCast<UanMacWakeup> (m_mac)->GetHeadersSize ();
-            m_timerWaitToBackoff.Schedule (Seconds(m_maxPropTime * 2 + (size + m_maxPacketSize) * 8 / dataRate));
+			StartContend();
           }
       }
+
 
     break;
   case UanMacWakeup::BUSY:
     m_timerWaitToBackoff.Cancel ();
-    m_timerBackoff.Cancel ();
+    m_timerCONTEND.Cancel ();
 
     break;
   }
@@ -331,31 +353,36 @@ UanMacFamaNW::TxEnd ()
       if (!m_useAck)
         {
           m_sendingData = false;
+		  m_macState = IDLE;
           m_sendQueue.pop ();
 
           if (m_sendQueue.size () >= 1 && m_bulkSend > 0)
             {
-             NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Sent Pkt Train (no ACK). Queue "<< m_sendQueue.size());
+             NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Send Pkt Train (no ACK). Queue "<< m_sendQueue.size());
 			 Ptr<Packet> sendPkt = m_sendQueue.front();
-
+             //m_macState = SDATA;
               if (Send (sendPkt->Copy()))
                 {
                   m_sendingData = true;
+				  m_macState = SDATA;
                   m_bulkSend--;
                   m_sendDataCallback (sendPkt);
                 }
             }
           else if (m_sendQueue.size () >= 1
               && !m_timerWaitToBackoff.IsRunning()
-              && !m_timerBackoff.IsRunning ())
+              && !m_timerCONTEND.IsRunning ())
             {
-				NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds ()  <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Shedule Next packet in Queue (no ACK). Queue "<< m_sendQueue.size());
-              // Size
-              uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
-              uint32_t size = 10;//DynamicCast<UanMacWakeup> (m_mac)->GetHeadersSize ();
-              m_timerWaitToBackoff.Schedule (Seconds(m_maxPropTime * 2 + (size + m_maxPacketSize) * 8 / dataRate));
+			  NS_LOG_DEBUG (" Schedule Next packet in Queue. ");
+			  StartContend();
             }
         }
+		else{
+		  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Sent DATA, WFACK");
+		  uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
+		  m_macState = WFACK;
+		  m_timerWfACK.Schedule(Seconds(m_maxPropTime * 2 + (m_maxPacketSize+20 + 5) * 8 / dataRate));
+		}
     }
 }
 
@@ -394,7 +421,6 @@ UanMacFamaNW::RxPacket (Ptr<Packet> pkt,  double sinr, UanTxMode mode)
 {
   UanHeaderCommon header;
   pkt->RemoveHeader (header);
-  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" Receiving packet from " << header.GetSrc () << " For " << header.GetDest ());
 
   m_rxSrc = header.GetSrc();
   m_rxDest = header.GetDest();
@@ -419,49 +445,98 @@ UanMacFamaNW::RxPacket (Ptr<Packet> pkt,  double sinr, UanTxMode mode)
   case DATA:
     if (header.GetDest () == GetAddress () || header.GetDest () == UanAddress::GetBroadcast ())
       {
-        if (m_useAck) SendAck (m_rxSrc);
-
-        m_forUpCb (pkt, m_rxSrc);
+        StopTimer();
+		
+		if (m_useAck) SendAck (m_rxSrc);
+        NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" RX DATA from " << header.GetSrc ()<<"********************************");
+        m_macState = IDLE;
+		m_forUpCb (pkt, m_rxSrc);
       }
+	else{
+	   StopTimer();
+	     if(m_useAck){
+	       m_timerBackoff.Schedule(Seconds(2*m_maxPropTime+0.1));
+		 }
+		 else{
+		   m_timerBackoff.Schedule(Seconds(m_maxPropTime+0.1));
+		 }
+		 NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" rx xDATA " );
+		 m_macState = BACKOFF;
+	}
     break;
   case ACK:
     if (header.GetDest () == GetAddress () || header.GetDest () == UanAddress::GetBroadcast ())
       {
         m_sendQueue.pop ();
         m_sendingData = false;
-
+        NS_ASSERT(m_macState = WFACK);
+		m_timerWfACK.Cancel();
+		StopTimer();
+		m_macState = IDLE;
         if (m_sendQueue.size () >= 1 && m_bulkSend > 0)
           {
             Ptr<Packet> sendPkt = m_sendQueue.front();
-
+            m_macState = SDATA;
             if (Send (sendPkt->Copy()))
               {
-				NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Sent Pkt Train after ACK. Queue size"<< m_sendQueue.size());
+				NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Send Pkt Train after ACK. Queue size"<< m_sendQueue.size());
                 m_sendingData = true;
                 m_bulkSend--;
-                m_sendDataCallback (sendPkt);
+				//if(m_sendDataCallback.IsNull()){
+                //  m_sendDataCallback (sendPkt);
+				//}
+				//		else{
+		  
+				uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
+			    m_macState = WFACK;
+		        m_timerWfACK.Schedule(Seconds(m_maxPropTime * 2 + (m_maxPacketSize+20 + 5) * 8 / dataRate));
+
               }
           }
         else if (m_sendQueue.size () >= 1
             && !m_timerWaitToBackoff.IsRunning()
-            && !m_timerBackoff.IsRunning ())
+            && !m_timerCONTEND.IsRunning ())
           {
-			NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds ()  <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Shedule Next packet in Queue after ACK. Queue size"<< m_sendQueue.size());
-            // Size
-            uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
-            uint32_t size = 10;//DynamicCast<UanMacWakeup> (m_mac)->GetHeadersSize ();
-            m_timerWaitToBackoff.Schedule (Seconds(m_maxPropTime * 2 + (size + m_maxPacketSize) * 8 / dataRate));
-          }
-
+			NS_LOG_DEBUG ( " Schedule Next packet in Queue after ACK. ");
+			StartContend();
+		  }
+		
         m_forUpCb (pkt, header.GetSrc ());
       }
+	  else{
+	    if(m_macState != WFDATA && m_macState != WFACK){
+	      StopTimer();
+		  m_macState = BACKOFF;
+		  m_timerBackoff.Schedule(Seconds(m_maxPropTime+0.08));
+		  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" rx xACK " );
+		}
+	  }
     break;
   }
 }
+void 
+UanMacFamaNW::StartContend(){
+    m_macState = CONTEND;
+	NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds ()  <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Schedule Next packet. Queue size"<< m_sendQueue.size());
+    // Size
+    uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
+    uint32_t size = 10;//DynamicCast<UanMacWakeup> (m_mac)->GetHeadersSize ();
+    m_timerWaitToBackoff.Schedule (Seconds(m_maxPropTime * 2 + (size + m_maxPacketSize) * 8 / dataRate));
+}
 
+void
+UanMacFamaNW::StopTimer(){
+  m_timerBackoff.Cancel();
+  m_timerCONTEND.Cancel();
+  m_timerWaitToBackoff.Cancel();
+  m_timerWfACK.Cancel();
+  m_timerWfCTS.Cancel();
+  m_timerWfDATA.Cancel();
+}
 void
 UanMacFamaNW::RxPacketGood (Ptr<Packet> pkt, double sinr, UanTxMode txMode)
 {
+
 
 }
 
@@ -470,8 +545,21 @@ UanMacFamaNW::RxRTS (Ptr<Packet> pkt)
 {
   if (m_rxDest == GetAddress())
     {
-      SendCTS (m_rxSrc, 0);
+	  if(m_macState != WFDATA){
+	    NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" RX RTS from " << m_rxSrc);
+		StopTimer();
+        SendCTS (m_rxSrc, 0);
+	  }
     }
+  else
+  {
+    if(m_macState != WFDATA && m_macState != WFACK){
+      StopTimer();
+	  m_timerBackoff.Schedule(Seconds(2*m_maxPropTime+0.1));
+	  m_macState = BACKOFF;
+	  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" rx xRTS " );
+	}
+  }
 }
 
 void
@@ -479,24 +567,54 @@ UanMacFamaNW::RxCTS (Ptr<Packet> pkt)
 {
   if (m_rxDest == GetAddress() && m_sendQueue.size() > 0)
     {
-	  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Send DATA");
+	  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" RX CTS ");
 	  //NS_ASSERT (m_sendQueue.size () > 0);
         Ptr<Packet> sendPkt = m_sendQueue.front();
 		Ptr<Packet> sendPktCb = sendPkt -> Copy();
 		Ptr<Packet> sendPktCb2 = sendPktCb -> Copy();
-        if (Send (sendPkt))
+		StopTimer();
+		m_macState = IDLE;
+        if (Send (sendPkt->Copy()))
           {
-            //m_sendQueue.pop ();
-            m_sendingData = true;
+		    Ptr<Packet> sendPktCb = Create<Packet> (m_maxPacketSize);
+			
             //m_sendDataCallback (sendPktCb);
+			NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Sent DATA");
+			//m_sendQueue.pop ();
+            m_sendingData = true;
+			m_macState = SDATA;
+			if(m_useAck){
+		      NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Sent DATA, WFACK");
+		      uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
+		      m_macState = WFACK;
+		      m_timerWfACK.Schedule(Seconds(m_maxPropTime * 2 + (m_maxPacketSize+20 + 5) * 8 / dataRate));
+			}
+			
+            
           }
 	 }
+  else{
+    uint32_t dataRate = m_phy->GetMode(0).GetDataRateBps();
+    if(m_useAck){
+	  StopTimer();
+	  m_timerBackoff.Schedule(Seconds(4*m_maxPropTime+(m_maxPacketSize+10+8)*2*8/dataRate));
+	  m_macState = BACKOFF;
+	  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" rx xCTS " );
+	}
+	else{
+	  StopTimer();
+	  m_timerBackoff.Schedule(Seconds(2*m_maxPropTime+(m_maxPacketSize)*2*8/dataRate));
+	  m_macState = BACKOFF;
+	  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () <<" MAC " << UanAddress::ConvertFrom (GetAddress ()) <<" rx xCTS " );
+	} 
+	
+  }
 }
 
 void
 UanMacFamaNW::RxPacketError (Ptr<Packet> pkt, double sinr)
 {
-  NS_LOG_DEBUG ("" << Simulator::Now () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Received packet in error with sinr " << sinr);
+  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Received packet in error with sinr " << sinr);
 }
 
 Address
@@ -509,17 +627,45 @@ UanMacFamaNW::GetBroadcast (void) const
 void
 UanMacFamaNW::On_timerWaitToBackoff (void)
 {
-  NS_LOG_DEBUG ("" << Simulator::Now () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << "Schedule RTS timer");
-  m_timerBackoff.Schedule (Seconds (m_rand->GetValue(0.1, m_maxBackoff)));
+  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Schedule RTS timer");
+  m_timerCONTEND.Schedule (Seconds (m_rand->GetValue(0.1, m_maxBackoff)));
 }
 
 void
-UanMacFamaNW::On_timerBackoff (void)
+UanMacFamaNW::On_timerCONTEND (void)
 {
-  
   SendRTS();
 }
 
+void 
+UanMacFamaNW::On_timerWfCTS(void){
+  double bkoffNum=m_rand->GetValue(0.1,m_maxBackoff);
+  m_timerBackoff.Schedule(Seconds(10*bkoffNum*(2*m_maxPropTime+0.1)));
+  m_macState = BACKOFF;
+  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << " not receive CTS");
+}
+void 
+UanMacFamaNW::On_timerWfDATA(void){
+  m_macState = IDLE;
+}
+void 
+UanMacFamaNW::On_timerBackoff(void){
+  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << " Exit Backoff");
+  m_macState = IDLE;
+  if(m_sendQueue.size()){
+    StopTimer();
+	StartContend();
+  }
+}
+
+void
+UanMacFamaNW::On_timerWfACK(void){
+  double bkoffNum=m_rand->GetValue(0.1,m_maxBackoff);
+  m_timerBackoff.Schedule(Seconds(10*bkoffNum*(2*m_maxPropTime+0.1)));
+  m_macState = BACKOFF;
+  m_sendingData = false;
+  NS_LOG_DEBUG ("" << Simulator::Now ().GetSeconds () << " MAC " << UanAddress::ConvertFrom (GetAddress ()) << " not receive ACK");
+}
 void
 UanMacFamaNW::SetSendDataCallback (Callback<void, Ptr<Packet> > sendDataCallback)
 {
@@ -535,7 +681,9 @@ UanMacFamaNW::AssignStreams (int64_t stream)
 }
 
 
+
 }
+
 
 
 

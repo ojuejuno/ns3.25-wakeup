@@ -158,6 +158,7 @@ private:
   UanMacWakeup::PhyState m_wakeupState;
   /** Flag when we've been cleared */
   bool m_cleared;
+  bool m_useWakeup;
 
   /** Provides uniform random variable for contention window. */
   Ptr<UniformRandomVariable> m_rv;
