@@ -41,7 +41,7 @@
  * the simulation in order to show the variation in throughput
  * with respect to changes in CW.
  */
-#include "uan-fama-test.h"
+#include "uan-test-case.h"
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/mobility-module.h"
@@ -57,10 +57,10 @@
 
 using namespace ns3;
 
-NS_LOG_COMPONENT_DEFINE ("UanCwExample");
+NS_LOG_COMPONENT_DEFINE ("UanTestCase");
 
 Experiment::Experiment () 
-  : m_numNodes (15),
+  : m_numNodes (1),
     m_dataRate (1000),
     m_depth (70),
     m_boundary (500),
@@ -69,13 +69,13 @@ Experiment::Experiment ()
     m_cwMin (125),
     m_cwMax (120),
     m_cwStep (10),
-    m_avgs (10),
+    m_avgs (3),
     m_slotTime (Seconds (0.05)),
     m_simTime (Seconds (100)),
-    m_gnudatfile ("uan-fama-test.gpl"),
-    m_asciitracefile ("uan-fama-test.asc"),
+    m_gnudatfile ("uan-test-case.gpl"),
+    m_asciitracefile ("uan-test-case.asc"),
     m_bhCfgFile ("uan-apps/dat/default.cfg")
-	,m_maxOfferedLoad(100)
+	,m_maxOfferedLoad(300)
 {
     m_randExp= CreateObject<ExponentialRandomVariable> ();
 	m_randExp->SetAttribute ("Mean", DoubleValue (0.3));
@@ -196,9 +196,9 @@ void
 Experiment::Run (UanHelper &uan)
 {
   //uan.SetMac ("ns3::UanMacTlohiNW");
-  uan.SetMac ("ns3::UanMacMacaNW");
+  //uan.SetMac ("ns3::UanMacMacaNW");
   //uan.SetMac ("ns3::UanMacFamaNW");
-  //uan.SetMac ("ns3::UanMacAlohaCs", "CW", UintegerValue (34));
+  uan.SetMac ("ns3::UanMacAlohaCs", "CW", UintegerValue (34));
   //uan.SetMac ("ns3::UanMacAloha");
   //uan.SetMac ("ns3::UanMacCw", "CW", UintegerValue (m_cwMin), "SlotTime", TimeValue (m_slotTime));
 
@@ -214,7 +214,7 @@ Experiment::Run (UanHelper &uan)
 #ifdef UAN_PROP_BH_INSTALLED
   Ptr<UanPropModelBh> prop = CreateObjectWithAttributes<UanPropModelBh> ("ConfigFile", StringValue ("exbhconfig.cfg"));
 #else 
-  Ptr<UanPropModelIdeal> prop = CreateObjectWithAttributes<UanPropModelIdeal> ();
+  Ptr<UanPropModelThorp> prop = CreateObjectWithAttributes<UanPropModelThorp> ("SpreadCoef" , DoubleValue(4.7));
 #endif //UAN_PROP_BH_INSTALLED
   Ptr<UanChannel> channel = CreateObjectWithAttributes<UanChannel> ("PropagationModel", PointerValue (prop));
 
@@ -233,14 +233,15 @@ Experiment::Run (UanHelper &uan)
     double minr = 2 * m_boundary;
     for (uint32_t i = 0; i < m_numNodes; i++)
       {
-        double x = urv->GetValue (0, m_boundary);
+        pos->Add(Vector(m_boundary/2.0+m_offeredLoad,m_boundary/2.0,m_depth));
+		/*double x = urv->GetValue (0, m_boundary);
         double y = urv->GetValue (0, m_boundary);
         double newr = std::sqrt ((x - m_boundary / 2.0) * (x - m_boundary / 2.0)
                             + (y - m_boundary / 2.0) * (y - m_boundary / 2.0));
         rsum += newr;
         minr = std::min (minr, newr);
         pos->Add (Vector (x, y, m_depth));
-
+        */
       }
     NS_LOG_DEBUG ("Mean range from gateway: " << rsum / m_numNodes
                                               << "    min. range " << minr);
@@ -262,7 +263,7 @@ Experiment::Run (UanHelper &uan)
       modemHelper.Set ("IdlePowerW",DoubleValue(0.024));
       modemHelper.Set ("RxPowerW",DoubleValue(0.024));
       modemHelper.Set ("TxPowerW",DoubleValue(0.12));
-      modemHelper.Set ("SleepPowerW",DoubleValue(0.000003));	
+      modemHelper.Set ("SleepPowerW",DoubleValue(0.000008));	
       energyHelper.Install (nc.Get(i));
 	  Ptr<EnergySource> source = nc.Get(i)->GetObject<EnergySourceContainer> ()->Get (0); 
       cont.Add( modemHelper.Install (devices.Get(i),source)); 
@@ -273,7 +274,7 @@ Experiment::Run (UanHelper &uan)
       modemHelper.Set ("IdlePowerW",DoubleValue(0.024));
       modemHelper.Set ("RxPowerW",DoubleValue(0.024));
       modemHelper.Set ("TxPowerW",DoubleValue(0.12));
-      modemHelper.Set ("SleepPowerW",DoubleValue(0.000003));	
+      modemHelper.Set ("SleepPowerW",DoubleValue(0.000008));	
       energyHelper.Install (sink.Get(0));
 	  Ptr<EnergySource> source = sink.Get(0)->GetObject<EnergySourceContainer> ()->Get (0); 
       cont.Add( modemHelper.Install (sinkdev.Get(0),source)); 
@@ -307,13 +308,13 @@ Experiment::Run (UanHelper &uan)
 	*/
 	for(uint32_t i = 0; i < m_numNodes; i++){
 	  Ptr<UanMac> mac = DynamicCast<UanNetDevice> (devices.Get(i))->GetMac ();
-	  Ptr<UanMacMacaNW> macFama = DynamicCast<UanMacMacaNW> (mac);
+	  Ptr<UanMacAlohaCs> macFama = DynamicCast<UanMacAlohaCs> (mac);
 	  UanAddress uanAddress(i);
 	  macFama->SetAddress(uanAddress);
 	}
 	
 	Ptr<UanMac> mac = DynamicCast<UanNetDevice> (sinkdev.Get(0))->GetMac ();
-	Ptr<UanMacMacaNW> macFama = DynamicCast<UanMacMacaNW> (mac);
+	Ptr<UanMacAlohaCs> macFama = DynamicCast<UanMacAlohaCs> (mac);
 	macFama->SetForwardUpCb(MakeCallback(&Experiment::ReceivePacket, this));
 	UanAddress uanAddress(m_numNodes);
 	macFama->SetAddress(uanAddress);
@@ -325,7 +326,7 @@ Experiment::Run (UanHelper &uan)
         nextEvent += m_simTime;
         Simulator::Schedule (nextEvent, &Experiment::ReportPower, this, cont);
 		Simulator::Schedule (nextEvent, &Experiment::ResetData, this);
-        Simulator::Schedule (nextEvent, &Experiment::UpdatePositions, this, nc);
+        //Simulator::Schedule (nextEvent, &Experiment::UpdatePositions, this, nc);
 		
 		//app.SetAttribute ("DataRate", DataRateValue (m_dataRate));
 		//apps = app.Install (nc);
@@ -406,18 +407,18 @@ Experiment::Send (NetDeviceContainer &devices, UanAddress &uanAddress, uint8_t s
   //m_generatedPackets++;
 
   UanAddress uanDst (m_numNodes);
-  double time = m_randExp->GetValue();
+  //double time = m_randExp->GetValue();
   //double sendTime = Simulator::Now().GetSeconds () + time;
   //if ( m_generatedPackets < 50000)
    //{
-      Simulator::Schedule(Seconds (time), &Experiment::Send, this, devices, uanDst, src);
+      Simulator::Schedule(Seconds (2), &Experiment::Send, this, devices, uanDst, src);
   // }
 }
 int
 main (int argc, char **argv)
 {
 
-  LogComponentEnable ("UanCwExample", LOG_LEVEL_ALL);
+  LogComponentEnable ("UanTestCase", LOG_LEVEL_ALL);
   //LogComponentEnable ("UanMacAlohaCs", LOG_LEVEL_ALL);
   //LogComponentEnable ("UanMacTlohiNW", LOG_LEVEL_ALL);
   //LogComponentEnable ("UanMacFamaNW", LOG_LEVEL_ALL);
@@ -450,10 +451,10 @@ main (int argc, char **argv)
   obf.SetTypeId (sinrModel);
   Ptr<UanPhyCalcSinr> sinr = obf.Create<UanPhyCalcSinr> ();
   //double testTimes[20]={0.0} 
-  for(exp.m_offeredLoad=exp.m_maxOfferedLoad; exp.m_offeredLoad>=1;exp.m_offeredLoad-=4)
+  for(exp.m_offeredLoad=exp.m_maxOfferedLoad; exp.m_offeredLoad>200;exp.m_offeredLoad-=10)
   {
-  	exp.m_randExp->SetAttribute ("Mean", DoubleValue (exp.m_offeredLoad*0.1));
-    exp.m_randExp->SetAttribute ("Bound", DoubleValue (exp.m_offeredLoad*0.3));
+  	exp.m_randExp->SetAttribute ("Mean", DoubleValue (100*0.1));
+    exp.m_randExp->SetAttribute ("Bound", DoubleValue (100*0.3));
   
   UanHelper uan;
   UanTxMode mode;

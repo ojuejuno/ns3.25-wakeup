@@ -54,6 +54,7 @@ public:
   std::string m_gnudatfile;
   std::string m_asciitracefile; 
   
+  bool m_isUltra;
 
   std::vector<double> m_energyNodes;
   std::vector<double> m_energySink;
@@ -83,7 +84,7 @@ SimpleTest::SimpleTest()
    m_depth (70),
    m_boundary (500),
    m_packetSize (23),
-   m_avgs (5),
+   m_avgs (10),
    m_maxOfferedLoad (100),
    m_offeredLoad(1),
    m_simTime (Seconds(100)),
@@ -100,6 +101,7 @@ SimpleTest::SimpleTest()
    m_randExp = CreateObject<ExponentialRandomVariable> ();
    m_randExp->SetAttribute ("Mean", DoubleValue (0.3));
    m_randExp->SetAttribute ("Bound", DoubleValue (0.9));
+   m_isUltra = true;
 }
 
 SimpleTest::~SimpleTest()
@@ -134,7 +136,7 @@ SimpleTest::SetPhyMac()
               "PerModel", PointerValue (per),
               "SinrModel", PointerValue (sinr),
               "SupportedModes", UanModesListValue (myModes));
-  m_uan.SetMac ("ns3::UanMacWakeup");
+  m_uan.SetMac ("ns3::UanMacWakeupMaca");
 }
 
 void 
@@ -196,7 +198,7 @@ SimpleTest::SetupWakeup( NodeContainer& nc, NodeContainer& sink){
   {
       Ptr<UanPhyGen> phy = 0 ;
 	  Ptr<UanMac> mac = 0 ;
-	  Ptr<UanMacWakeup> macWakeup = 0 ;
+	  Ptr<UanMacWakeupMaca> macWakeup = 0 ;
 	  Ptr<UanPhy> phyWakeup = 0;
 	  Ptr<UanNetDevice> uanNetdevice = 0;
 	  Ptr<Node> nodePtr = 0 ;
@@ -206,7 +208,7 @@ SimpleTest::SetupWakeup( NodeContainer& nc, NodeContainer& sink){
 	    
 	    phy = DynamicCast<UanPhyGen> (DynamicCast<UanNetDevice> (sinkDevice.Get(0))->GetPhy ());
 		mac = DynamicCast<UanNetDevice> (sinkDevice.Get(0))->GetMac ();
-        macWakeup = DynamicCast<UanMacWakeup> (mac);
+        macWakeup = DynamicCast<UanMacWakeupMaca> (mac);
         phy->RegisterListener( &(*macWakeup));
 		macWakeup->AttachPhy(phy);
 		
@@ -229,7 +231,7 @@ SimpleTest::SetupWakeup( NodeContainer& nc, NodeContainer& sink){
 	  
 	    phy = DynamicCast<UanPhyGen> (DynamicCast<UanNetDevice> (devices.Get(i))->GetPhy ());
         mac = DynamicCast<UanNetDevice> (devices.Get(i))->GetMac ();
-        macWakeup = DynamicCast<UanMacWakeup> (mac);
+        macWakeup = DynamicCast<UanMacWakeupMaca> (mac);
         phy->RegisterListener( &(*macWakeup));
 		macWakeup->AttachPhy(phy);
 		
@@ -246,25 +248,27 @@ SimpleTest::SetupWakeup( NodeContainer& nc, NodeContainer& sink){
         nodePtr=nc.Get(i);
 		wakeUpDevicePtr = devicesWakeupHE.Get(i);
 		}
-      Ptr<UanMacFama> macAlohaRts = Create<UanMacFama> ();
+      Ptr<UanMacMaca> macAlohaRts = Create<UanMacMaca> ();
       macAlohaRts->AttachMacWakeup (macWakeup);
       macAlohaRts->AttachPhy (phy);
-      macAlohaRts->SetBackoffTime (m_backoff);
-      macAlohaRts->SetUseAck (m_ack);
-      macAlohaRts->SetBulkSend (0);
-
+      //macAlohaRts->SetBackoffTime (m_backoff);
+      //macAlohaRts->SetUseAck (m_ack);
+      //macAlohaRts->SetBulkSend (0);
+	  //macAlohaRts->SetUltra(m_isUltra);
+	  
       uanNetdevice->SetMac (macAlohaRts);
       macAlohaRts->SetAddress (uanAddress);
-      macAlohaRts->SetRtsSize (13);
+     // macAlohaRts->SetRtsSize (13);
       macWakeup->SetAddress (uanAddress);
 
       if (i == devices.GetN())
         macAlohaRts->SetForwardUpCb(MakeCallback(&SimpleTest::SinkReceiveData, this));
-      else
-        macAlohaRts->SetSendDataCallback (MakeCallback (&SimpleTest::DataSent, this));
+      else{}
+        //macAlohaRts->SetSendDatacb (MakeCallback (&SimpleTest::DataSent, this));
 
-      macWakeup->SetSendPhyStateChangeCb (MakeCallback (&UanMacFama::PhyStateCb, macAlohaRts));
-      macWakeup->SetTxEndCallback (MakeCallback (&UanMacFama::TxEnd, macAlohaRts));
+      //macWakeup->SetSendPhyStateChangeCb (MakeCallback (&UanMacFama::PhyStateCb, macAlohaRts));
+      //macWakeup->SetTxEndCallback (MakeCallback (&UanMacMaca::TxEnd, macAlohaRts));
+	  //macWakeup->SetToneRxCallback (MakeCallback (&UanMacMaca::RxCTD,macAlohaRts));
 
 
       /********** Energy **********/
@@ -294,7 +298,7 @@ SimpleTest::SetupWakeup( NodeContainer& nc, NodeContainer& sink){
       modelWakeup->SetTxPowerW(0.120);
       modelWakeup->SetRxPowerW(0.0000081);
       modelWakeup->SetIdlePowerW(0.0000081);
-      modelWakeup->SetSleepPowerW(0);
+      modelWakeup->SetSleepPowerW(0.0000081);
 
       modelWakeup->SetNode (nodePtr);
       modelWakeup->SetEnergySource (infiniteEnergy);
@@ -421,7 +425,7 @@ SimpleTest::StartRun(){
 	
 	Time nextEvent = Seconds (0.5);
     for (uint32_t an = 0; an < m_avgs; an++)
-        {
+        { 
         nextEvent += m_simTime;
         Simulator::Schedule (nextEvent, &SimpleTest::ReportPower, this, nc ,sink);
 		Simulator::Schedule (nextEvent, &SimpleTest::ResetData, this);
@@ -618,8 +622,8 @@ main (int argc, char **argv)
 {
 
   LogComponentEnable ("WakeupTestSimple", LOG_LEVEL_ALL);
-  //LogComponentEnable ("UanMacFama", LOG_LEVEL_ALL);
-  //LogComponentEnable ("UanMacWakeup", LOG_LEVEL_ALL);
+  LogComponentEnable ("UanMacMaca", LOG_LEVEL_ALL);
+  //LogComponentEnable ("UanMacWakeupMaca", LOG_LEVEL_ALL);
 
   SimpleTest exp;
 

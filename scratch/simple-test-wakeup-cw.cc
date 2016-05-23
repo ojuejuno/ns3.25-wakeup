@@ -84,7 +84,7 @@ SimpleTest::SimpleTest()
    m_depth (70),
    m_boundary (500),
    m_packetSize (23),
-   m_avgs (5),
+   m_avgs (10),
    m_maxOfferedLoad (100),
    m_offeredLoad(1),
    m_simTime (Seconds(100)),
@@ -94,8 +94,8 @@ SimpleTest::SimpleTest()
    m_receivedPackets(0),
    m_generatedPackets(0),
    
-   m_gnudatfile ("uan-cw-example.gpl"),
-   m_asciitracefile ("uan-cw-example.asc")
+   m_gnudatfile ("simple-wkup-cw.gpl"),
+   m_asciitracefile ("simple-wkup-cw.asc")
 {   
    m_rand = CreateObject<UniformRandomVariable> ();
    m_randExp = CreateObject<ExponentialRandomVariable> ();
@@ -291,7 +291,7 @@ SimpleTest::SetupWakeup( NodeContainer& nc, NodeContainer& sink){
       modelWakeup->SetTxPowerW(0.120);
       modelWakeup->SetRxPowerW(0.0000081);
       modelWakeup->SetIdlePowerW(0.0000081);
-      modelWakeup->SetSleepPowerW(0);
+      modelWakeup->SetSleepPowerW(0.0000081);
 
       modelWakeup->SetNode (nodePtr);
       modelWakeup->SetEnergySource (infiniteEnergy);
@@ -309,14 +309,14 @@ SimpleTest::SetupWakeup( NodeContainer& nc, NodeContainer& sink){
       /**************************************/
       /********** High Energy Mode **********/
 
-      macWakeup->SetHighEnergyMode ();
+      /*macWakeup->SetHighEnergyMode ();
       Ptr<UanPhy> phyWakeupHE = DynamicCast<UanNetDevice> (wakeUpDevicePtr)->GetPhy ();
       macWakeup->AttachWakeupHEPhy (phyWakeupHE);
-      phyWakeupHE->SetMac (macWakeup);
+      phyWakeupHE->SetMac (macWakeup);*/
 
 
       /********** Energy **********/
-      // Energy wakeupHE
+      /*// Energy wakeupHE
       Ptr<AcousticModemEnergyModel> modelWakeupHE = CreateObject<AcousticModemEnergyModel> ();
       modelWakeupHE->SetTxPowerW(0.120);
       modelWakeupHE->SetRxPowerW(0.00054);
@@ -328,11 +328,11 @@ SimpleTest::SetupWakeup( NodeContainer& nc, NodeContainer& sink){
       infiniteEnergy->AppendDeviceEnergyModel (modelWakeupHE);
 
       cb = MakeCallback (&DeviceEnergyModel::ChangeState, modelWakeupHE);
-      phyWakeupHE->SetEnergyModelCallback (cb);
+      phyWakeupHE->SetEnergyModelCallback (cb);*/
 
       /****************************/
 
-      phyWakeupHE->SetSleepMode (true);
+      /*phyWakeupHE->SetSleepMode (true);*/
     }
       /**************************************/
   // uan.EnableAsciiAll (std::cerr);
@@ -523,10 +523,12 @@ SimpleTest::ReportPower (NodeContainer& nc, NodeContainer& sink)
       Ptr<InfiniteEnergySource> source = nc.Get (i)->GetObject<InfiniteEnergySource> ();
       accumEnergy += source->GetEnergyConsumption ();
     }
+  NS_LOG_DEBUG (Simulator::Now ().GetSeconds () <<"  "<< ((accumEnergy / nc.GetN ()) - m_energyNodes.back()) <<" nodes "<<((sink.Get (0)->GetObject<InfiniteEnergySource> ()->GetEnergyConsumption ()) - m_energySink.back())<< " sink Power Consumed " );	
+
   m_energyNodes.push_back (accumEnergy / nc.GetN ());
   m_energySink.push_back (sink.Get (0)->GetObject<InfiniteEnergySource> ()->GetEnergyConsumption ());
 
-  NS_LOG_DEBUG (Simulator::Now ().GetSeconds () <<"  "<<m_energyNodes.back() <<" nodes "<<m_energySink.back()<< " sink Power Consumed " );
+
 
 	
 }

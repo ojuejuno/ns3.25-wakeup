@@ -41,7 +41,7 @@
  * the simulation in order to show the variation in throughput
  * with respect to changes in CW.
  */
-#include "uan-fama-test.h"
+#include "uan-fama-test-hidden.h"
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/mobility-module.h"
@@ -60,10 +60,10 @@ using namespace ns3;
 NS_LOG_COMPONENT_DEFINE ("UanCwExample");
 
 Experiment::Experiment () 
-  : m_numNodes (15),
+  : m_numNodes (10),
     m_dataRate (1000),
     m_depth (70),
-    m_boundary (500),
+    m_boundary (20),
     m_packetSize (23),
     m_bytesTotal (0),
     m_cwMin (125),
@@ -77,9 +77,10 @@ Experiment::Experiment ()
     m_bhCfgFile ("uan-apps/dat/default.cfg")
 	,m_maxOfferedLoad(100)
 {
-    m_randExp= CreateObject<ExponentialRandomVariable> ();
+    m_randExp = CreateObject<ExponentialRandomVariable> ();
 	m_randExp->SetAttribute ("Mean", DoubleValue (0.3));
     m_randExp->SetAttribute ("Bound", DoubleValue (0.9));
+	m_doHidden = false; 
 }
 
 void
@@ -172,16 +173,53 @@ void
 Experiment::UpdatePositions (NodeContainer &nodes)
 {
 
-  NS_LOG_DEBUG (Simulator::Now ().GetSeconds () << " Updating positions");
+  //NS_LOG_DEBUG (Simulator::Now ().GetSeconds () << " Updating positions");
   NodeContainer::Iterator it = nodes.Begin ();
-  Ptr<UniformRandomVariable> uv = CreateObject<UniformRandomVariable> ();
-  for (; it != nodes.End (); it++)
-    {
-      Ptr<MobilityModel> mp = (*it)->GetObject<MobilityModel> ();
-      mp->SetPosition (Vector (uv->GetValue (0, m_boundary), uv->GetValue (0, m_boundary), 70.0));
-    }
+  Ptr<UniformRandomVariable> urv = CreateObject<UniformRandomVariable> ();
+  double rsum = 0;
+  double minr = 270;
+
+   for (uint32_t i = 0; i < m_numNodes/2; i++,it++)
+      {
+        double x = 15+urv->GetValue (0, m_boundary);
+        double y = 240+urv->GetValue (0, m_boundary);//Center A =25,250,bound =20
+        double newr = std::sqrt ((x - 250) * (x - 250)
+                            + (y - 250) * (y -250));
+        rsum += newr;
+        minr = std::min (minr, newr);
+        Ptr<MobilityModel> mp = (*it)->GetObject<MobilityModel> ();
+        mp->SetPosition (Vector (x, y, m_depth));
+      }
+	if(m_doHidden){
+	  for (uint32_t i = m_numNodes/2; i < m_numNodes; i++)
+        {
+          double x = 465+urv->GetValue (0, m_boundary);
+          double y = 240+urv->GetValue (0, m_boundary);//CenterB: 475,250,bound=20
+          double newr = std::sqrt ((x - 250) * (x - 250)
+                            + (y - 250) * (y -  250));
+          rsum += newr;
+          minr = std::min (minr, newr);
+          Ptr<MobilityModel> mp = (*it)->GetObject<MobilityModel> ();
+          mp->SetPosition (Vector (x, y, m_depth));
+        }
+	  }
+	  else{
+	    for (uint32_t i = m_numNodes/2; i < m_numNodes; i++)
+        {
+          double x = 102.5+urv->GetValue (0, m_boundary);
+          double y = 435+urv->GetValue (0, m_boundary);//CenterB: 112.5,445,bound=20,No Hidden
+          double newr = std::sqrt ((x - 250) * (x - 250)
+                            + (y - 250) * (y -  250));
+          rsum += newr;
+          minr = std::min (minr, newr);
+          Ptr<MobilityModel> mp = (*it)->GetObject<MobilityModel> ();
+          mp->SetPosition (Vector (x, y, m_depth));
+        }
+	  }
 	 // if (m_offeredLoad<=1)
     //Simulator::Stop(m_simTime);
+	NS_LOG_DEBUG (Simulator::Now ().GetSeconds () <<"Mean range from gateway: " << rsum / m_numNodes
+                                              << "    min. range " << minr);
 }
 
 void
@@ -214,7 +252,7 @@ Experiment::Run (UanHelper &uan)
 #ifdef UAN_PROP_BH_INSTALLED
   Ptr<UanPropModelBh> prop = CreateObjectWithAttributes<UanPropModelBh> ("ConfigFile", StringValue ("exbhconfig.cfg"));
 #else 
-  Ptr<UanPropModelIdeal> prop = CreateObjectWithAttributes<UanPropModelIdeal> ();
+  Ptr<UanPropModelThorp> prop = CreateObjectWithAttributes<UanPropModelThorp> ("SpreadCoef" , DoubleValue(4.7));
 #endif //UAN_PROP_BH_INSTALLED
   Ptr<UanChannel> channel = CreateObjectWithAttributes<UanChannel> ("PropagationModel", PointerValue (prop));
 
@@ -227,21 +265,46 @@ Experiment::Run (UanHelper &uan)
 
   {
     Ptr<UniformRandomVariable> urv = CreateObject<UniformRandomVariable> ();
-    pos->Add (Vector (m_boundary / 2.0, m_boundary / 2.0, m_depth));
+    pos->Add (Vector (250,250,m_depth));//Sink: 250,250
     double rsum = 0;
 
-    double minr = 2 * m_boundary;
-    for (uint32_t i = 0; i < m_numNodes; i++)
+    double minr = 270;
+    for (uint32_t i = 0; i < m_numNodes/2; i++)
       {
-        double x = urv->GetValue (0, m_boundary);
-        double y = urv->GetValue (0, m_boundary);
-        double newr = std::sqrt ((x - m_boundary / 2.0) * (x - m_boundary / 2.0)
-                            + (y - m_boundary / 2.0) * (y - m_boundary / 2.0));
+        double x = 15+urv->GetValue (0, m_boundary);
+        double y = 240+urv->GetValue (0, m_boundary);//Center A =25,250,bound =20
+        double newr = std::sqrt ((x - 250) * (x - 250)
+                            + (y - 250) * (y -250));
         rsum += newr;
         minr = std::min (minr, newr);
         pos->Add (Vector (x, y, m_depth));
 
       }
+	  if(m_doHidden){
+    	for (uint32_t i = m_numNodes/2; i < m_numNodes; i++)
+        {
+          double x = 465+urv->GetValue (0, m_boundary);
+          double y = 240+urv->GetValue (0, m_boundary);//CenterB: 475,250,boun=20
+          double newr = std::sqrt ((x - 250) * (x - 250)
+                            + (y - 250) * (y -  250));
+          rsum += newr;
+          minr = std::min (minr, newr);
+          pos->Add (Vector (x, y, m_depth));
+
+        }
+	  }
+	  else{
+	    for (uint32_t i = m_numNodes/2; i < m_numNodes; i++)
+        {
+          double x = 102.5+urv->GetValue (0, m_boundary);
+          double y = 435+urv->GetValue (0, m_boundary);//CenterB: 112.5,445,bound=20,No Hidden
+          double newr = std::sqrt ((x - 250) * (x - 250)
+                            + (y - 250) * (y -  250));
+          rsum += newr;
+          minr = std::min (minr, newr);
+          pos->Add (Vector (x, y, m_depth));
+        }
+		}
     NS_LOG_DEBUG ("Mean range from gateway: " << rsum / m_numNodes
                                               << "    min. range " << minr);
 
@@ -262,7 +325,7 @@ Experiment::Run (UanHelper &uan)
       modemHelper.Set ("IdlePowerW",DoubleValue(0.024));
       modemHelper.Set ("RxPowerW",DoubleValue(0.024));
       modemHelper.Set ("TxPowerW",DoubleValue(0.12));
-      modemHelper.Set ("SleepPowerW",DoubleValue(0.000003));	
+      modemHelper.Set ("SleepPowerW",DoubleValue(0.000008));	
       energyHelper.Install (nc.Get(i));
 	  Ptr<EnergySource> source = nc.Get(i)->GetObject<EnergySourceContainer> ()->Get (0); 
       cont.Add( modemHelper.Install (devices.Get(i),source)); 
@@ -273,7 +336,7 @@ Experiment::Run (UanHelper &uan)
       modemHelper.Set ("IdlePowerW",DoubleValue(0.024));
       modemHelper.Set ("RxPowerW",DoubleValue(0.024));
       modemHelper.Set ("TxPowerW",DoubleValue(0.12));
-      modemHelper.Set ("SleepPowerW",DoubleValue(0.000003));	
+      modemHelper.Set ("SleepPowerW",DoubleValue(0.000008));	
       energyHelper.Install (sink.Get(0));
 	  Ptr<EnergySource> source = sink.Get(0)->GetObject<EnergySourceContainer> ()->Get (0); 
       cont.Add( modemHelper.Install (sinkdev.Get(0),source)); 
@@ -392,6 +455,7 @@ Experiment::Run (UanHelper &uan)
     //return m_data;
   }
 }
+
 void
 Experiment::Send (NetDeviceContainer &devices, UanAddress &uanAddress, uint8_t src)
 {
@@ -409,9 +473,9 @@ Experiment::Send (NetDeviceContainer &devices, UanAddress &uanAddress, uint8_t s
   double time = m_randExp->GetValue();
   //double sendTime = Simulator::Now().GetSeconds () + time;
   //if ( m_generatedPackets < 50000)
-   //{
+
       Simulator::Schedule(Seconds (time), &Experiment::Send, this, devices, uanDst, src);
-  // }
+
 }
 int
 main (int argc, char **argv)
